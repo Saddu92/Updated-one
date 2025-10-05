@@ -1,37 +1,101 @@
-import React from "react";
+import Footer from "@/components/Footer";
+import Navbar from "@/components/Navbar";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
+import { MapContainer, TileLayer } from "react-leaflet";
+import L from "leaflet";
+
+
+const mapStyles = {
+  osm: {
+    url: "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    attribution: '&copy; OpenStreetMap contributors'
+  },
+  stamen: {
+    url: "https://tiles.stadiamaps.com/tiles/stamen_toner_lite/{z}/{x}/{y}{r}.png",
+    attribution: 'Map tiles by Stamen Design, OpenStreetMap'
+  },
+};
 
 const Home = () => {
+  const [style, setStyle] = useState("osm");
   return (
-    <div className="min-h-screen flex flex-col justify-between bg-gray-50">
-      {/* Navbar */}
-      <header className="bg-white shadow-md py-4 px-6 flex justify-between items-center">
-        <div className="text-2xl font-bold text-indigo-600">SyncFleet</div>
-        <nav className="space-x-4">
-          <Link to="/" className="text-gray-700 hover:text-indigo-600">Home</Link>
-          <Link to="/about" className="text-gray-700 hover:text-indigo-600">About</Link>
-          <Link to="/contact" className="text-gray-700 hover:text-indigo-600">Contact</Link>
-          <Link to="/login" className="text-white bg-indigo-600 px-4 py-2 rounded hover:bg-indigo-700">Login</Link>
-          <Link to="/register" className="text-indigo-600 border border-indigo-600 px-4 py-2 rounded hover:bg-indigo-50">Register</Link>
-        </nav>
-      </header>
+    <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] text-white font-inter">
+      <Navbar />
 
       {/* Hero Section */}
-      <main className="flex-1 flex flex-col items-center justify-center text-center px-6">
-        <h1 className="text-4xl md:text-5xl font-extrabold text-gray-800 mb-4">Synchronize your fleets, effortlessly.</h1>
-        <p className="text-lg text-gray-600 max-w-2xl mb-6">
-          SyncFleet helps you manage group tracking, real-time coordination, and alert systems for logistics, rideshares, and rescue operations.
-        </p>
-        <div className="space-x-4">
-          <Link to="/dashboard" className="bg-indigo-600 text-white px-6 py-3 rounded-md text-lg hover:bg-indigo-700">Get Started</Link>
-          <Link to="/about" className="text-indigo-600 border border-indigo-600 px-6 py-3 rounded-md text-lg hover:bg-indigo-50">Learn More</Link>
+      <main className="flex flex-col-reverse md:flex-row items-center justify-center px-6 md:px-10 lg:px-20 py-16 md:py-20 gap-12">
+        {/* Left Content */}
+        <div className="flex-1 text-center md:text-left space-y-6">
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold font-orbitron leading-tight">
+            Track <span className="text-cyan-400">Together</span>,<br />
+            Travel <span className="text-green-400">Smarter</span>.
+          </h1>
+          <p className="text-base sm:text-lg text-gray-300 max-w-md md:max-w-lg mx-auto md:mx-0">
+            Real-time group tracking with trails, in-app chat, and emergency SOS
+            alerts. Built for road trips, bikers, and explorers who stay
+            together.
+          </p>
+          <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4 mt-4">
+            <Link
+              to="/dashboard"
+              className="bg-cyan-500 text-white px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-cyan-400 transition shadow-md text-center"
+            >
+              Get Started
+            </Link>
+            <Link
+              to="/about"
+              className="border border-cyan-400 px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-cyan-900 transition text-center"
+            >
+              Learn More
+            </Link>
+          </div>
+        </div>
+
+        {/* Right Mockup */}
+        <div className="flex-1 flex justify-center relative w-full max-w-md mx-auto md:mx-0">
+          <div className="w-full sm:w-72 h-[400px] sm:h-[500px] rounded-3xl shadow-[0_0_20px_rgba(56,189,248,0.6)] bg-gray-900 overflow-hidden relative flex flex-col z-[10]">
+            {/* Mockup Header */}
+            <div className="bg-gray-800 py-2 px-4 flex justify-between items-center flex-shrink-0">
+              <span className="text-sm">SyncFleet Map</span>
+              <span className="text-xs text-green-400 animate-pulse">
+                ● Live
+              </span>
+            </div>
+
+            {/* Map */}
+            <div className="flex-1 min-h-0 relative">
+              <MapContainer
+                center={[28.6139, 77.209]}
+                zoom={5}
+                scrollWheelZoom={false}
+                className="h-full w-full"
+              >
+                <TileLayer
+                  url={mapStyles[style].url}
+                  attribution={mapStyles[style].attribution}
+                />
+              </MapContainer>
+
+              {/* Toggle button */}
+              <button
+                className="absolute top-2 right-2 bg-gray-800 px-2 py-1 rounded text-white z-[999]"
+                onClick={() => setStyle(style === "osm" ? "stamen" : "osm")}
+              >
+                Switch Map
+              </button>
+            </div>
+
+            {/* Floating SOS */}
+            <button className="absolute z-[999] bottom-4 right-4 sm:bottom-6 sm:right-6 bg-red-500 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition animate-ping">
+              SOS
+            </button>
+          </div>
         </div>
       </main>
 
       {/* Footer */}
-      <footer className="bg-white py-4 px-6 text-center text-gray-500 text-sm">
-        &copy; {new Date().getFullYear()} SyncFleet. All rights reserved.
-      </footer>
+      <Footer />
     </div>
   );
 };

@@ -26,7 +26,8 @@ import notificationSound from "../assets/notification.mp3";
 import RoutePath from "./RoutePath.jsx";
 import axios from "axios";
 import HazardLayer from "./HazardLayer.jsx";
-
+import { GiRoad } from "react-icons/gi";
+import { MdOutlineWarning } from "react-icons/md";
 import { GEOCODE, ROOM_BY_CODE } from "@/utils/constant.js";
 import API from "@/utils/axios.js";
 
@@ -215,6 +216,7 @@ const RoomMap = ({ room }) => {
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
   const [chatOpen, setChatOpen] = useState(true);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [alertUsers, setAlertUsers] = useState(new Set());
@@ -230,7 +232,6 @@ const RoomMap = ({ room }) => {
   const [hazards, setHazards] = useState([]);
   const [showStationaryPrompt, setShowStationaryPrompt] = useState(false);
 
-
   // Refs
   const mapRef = useRef();
   const lastPositionRef = useRef(null);
@@ -242,7 +243,6 @@ const RoomMap = ({ room }) => {
   const geolocationWatchId = useRef(null);
   const toastTimeoutRef = useRef(null);
   const stationaryPromptTimeout = useRef(null);
-
 
   const trailExpiryMs = useMemo(
     () => trailDuration * 60 * 1000,
@@ -937,31 +937,35 @@ const RoomMap = ({ room }) => {
       showToast("Cannot send message - disconnected from server", "danger");
       return;
     }
+
     const message = {
       type: "chat",
       content: newMessage.trim(),
-      sender: user?.name || "You",
+      sender: user?.name.trim(), // always use actual username
       timestamp: new Date().toISOString(),
     };
+
     socket.emit("chat-message", { roomCode, message });
     setMessages((prev) => [...prev, message]);
     setNewMessage("");
     chatInputRef.current?.focus();
   }, [newMessage, socket, roomCode, user, showToast]);
+
   const handleRecenter = useCallback(() => {
     if (coords && mapRef.current) {
       mapRef.current.setView([coords.lat, coords.lng], 16);
     }
   }, [coords]);
-  const handleLeaveRoom = useCallback(() => {
-    if (window.confirm("Are you sure you want to leave the room?")) {
-      if (socket.connected) {
-        socket.emit("leave-room", { roomCode, userId: user.id });
-        disconnectSocket();
-      }
-      window.location.href = "/";
-    }
-  }, [socket, roomCode, user]);
+
+  // const handleLeaveRoom = useCallback(() => {
+  //   if (window.confirm("Are you sure you want to leave the room?")) {
+  //     if (socket.connected) {
+  //       socket.emit("leave-room", { roomCode, userId: user.id });
+  //       disconnectSocket();
+  //     }
+  //     window.location.href = "/";
+  //   }
+  // }, [socket, roomCode, user]);
 
   const activeUserCount = useMemo(() => {
     const now = Date.now();
@@ -980,6 +984,11 @@ const RoomMap = ({ room }) => {
     (socketId) => alertUsers.has(socketId),
     [alertUsers]
   );
+
+  // Leave room handler with modal
+  const handleLeaveRoom = useCallback(() => {
+    setShowLeaveModal(true); // open modal instead of window.confirm
+  }, []);
 
   // ---- RETURN: UI ---------
   if (!isUserReady) {
@@ -1029,18 +1038,6 @@ const RoomMap = ({ room }) => {
   return (
     <ErrorBoundary>
       <div className="relative h-screen w-screen overflow-hidden">
-        {/* Connection status indicator */}
-        <div className="absolute top-4 left-4 z-[9999] flex items-center">
-          <div
-            className={`w-3 h-3 rounded-full mr-2 ${
-              socket.connected ? "bg-green-500" : "bg-red-500"
-            }`}
-          />
-          <span className="text-sm">
-            {socket.connected ? "Connected" : "Disconnected"}
-            {isConnecting && " (Connecting...)"}
-          </span>
-        </div>
         {/* Toast notification */}
         {toast && (
           <div
@@ -1136,340 +1133,398 @@ const RoomMap = ({ room }) => {
           </div>
         )}
 
-        <MapContainer
-          center={coords}
-          zoom={15}
-          style={{ height: "100%", width: "100%" }}
-          ref={mapRef}
-          zoomControl={false}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
-
-          {sourceCoords && destinationCoords && (
-            <RoutePath source={sourceCoords} destination={destinationCoords} />
-          )}
-
-          {/* Draw geofence */}
-          {geofence.center && (
-            <Circle
-              center={geofence.center}
-              radius={geofence.radius}
-              pathOptions={{
-                color: "#2563eb",
-                fillColor: "#93c5fd",
-                fillOpacity: 0.2,
-              }}
-            />
-          )}
-
-          {/* Yellow blinking hazard markers visible within last 5 minutes */}
-          <HazardLayer hazards={visibleHazards} />
-
-          <RecenterMap coords={coords} />
-
-          {/* Render Yourself */}
-          <Marker
-            position={coords}
-            icon={createPulsingIcon(
-              userLocations[mySocketId]?.isStationary
-                ? "#ef4444"
-                : isOutsideGeofence(coords, geofence)
-                ? "#f59e0b"
-                : getUserColor(mySocketId),
-              "You",
-              userLocations[mySocketId]?.isStationary
-                ? "stationary"
-                : isOutsideGeofence(coords, geofence)
-                ? "outside"
-                : "normal"
-            )}
-          >
-            <Popup className="font-medium">
-              {user?.name || "You"}
-              {userLocations[mySocketId]?.isStationary && (
-                <span className="block text-red-700 font-bold">
-                  Stationary - SOS
+        <div className="flex h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] p-6 gap-6">
+          {/* Left: Map Section (80%) */}
+          <div className="w-[80%] h-full">
+            <div className="h-full w-full rounded-2xl shadow-2xl border-2 border-indigo-500/40 overflow-hidden bg-gray-900/40 backdrop-blur-md">
+              {/* Connection status indicator */}
+              <div className="absolute top-4 left-4 z-[9999] flex items-center">
+                <div
+                  className={`w-3 h-3 rounded-full mr-2 ${
+                    socket.connected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-sm">
+                  {socket.connected ? "Connected" : "Disconnected"}
+                  {isConnecting && " (Connecting...)"}
                 </span>
-              )}
-              {isOutsideGeofence(coords, geofence) && (
-                <span className="block text-orange-700 font-bold">
-                  Outside geofenced area!
-                </span>
-              )}
-            </Popup>
-          </Marker>
+              </div>
+              <MapContainer
+                center={coords}
+                zoom={15}
+                style={{ height: "100%", width: "100%" }}
+                ref={mapRef}
+                zoomControl={false}
+              >
+                <TileLayer
+                  url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                />
 
-          {/* Render Other Users */}
-          {Object.entries(userLocations)
-            .filter(([id]) => id !== mySocketId)
-            .map(([id, u]) => {
-              if (!u?.coords) return null;
-              const now = Date.now();
-              const isActive = now - u.lastSeen < INACTIVE_THRESHOLD;
-              if (!isActive) return null;
-              const outside = isOutsideGeofence(u.coords, geofence);
-              const deviationDistance = calculateDeviation(u.coords);
+                {sourceCoords && destinationCoords && (
+                  <RoutePath
+                    source={sourceCoords}
+                    destination={destinationCoords}
+                  />
+                )}
 
-              let markerType = null;
-              if (u.isStationary) markerType = "stationary";
-              else if (deviationDistance > DEVIATION_THRESHOLD)
-                markerType = "far";
-              else if (outside) markerType = "outside";
-              else markerType = "normal";
+                {/* Draw geofence */}
+                {geofence.center && (
+                  <Circle
+                    center={geofence.center}
+                    radius={geofence.radius}
+                    pathOptions={{
+                      color: "#2563eb",
+                      fillColor: "#93c5fd",
+                      fillOpacity: 0.2,
+                    }}
+                  />
+                )}
 
-              return (
-                <React.Fragment key={id}>
-                  <Marker
-                    position={u.coords}
-                    icon={createPulsingIcon(
-                      markerType === "stationary"
-                        ? "#ef4444"
-                        : markerType === "far"
-                        ? "#eab308"
-                        : markerType === "outside"
-                        ? "#f59e0b"
-                        : getUserColor(id),
-                      u.username,
-                      markerType
-                    )}
-                  >
-                    <Popup className="font-medium">
-                      <div className="flex flex-col">
-                        <span>{u.username}</span>
-                        {markerType === "stationary" && (
-                          <span className="text-red-600 font-bold">
-                            Stationary - SOS
-                          </span>
-                        )}
-                        {markerType === "far" && (
-                          <span className="text-yellow-600">
-                            {Math.round(deviationDistance)}m from group
-                          </span>
-                        )}
-                        {markerType === "outside" && (
-                          <span className="text-orange-600 font-bold">
-                            Outside geofenced area!
-                          </span>
-                        )}
-                      </div>
-                    </Popup>
-                  </Marker>
-                  {/* Polyline for movement */}
-                  {u.path && u.path.length > 1 && (
-                    <DecoratedPolyline
-                      positions={u.path}
-                      color={
-                        markerType === "stationary"
-                          ? "#ef4444"
-                          : markerType === "far"
-                          ? "#eab308"
-                          : markerType === "outside"
-                          ? "#f59e0b"
-                          : getUserColor(id)
-                      }
-                      weight={4}
-                      dashArray={
-                        markerType === "stationary" ||
-                        markerType === "far" ||
-                        markerType === "outside"
-                          ? "5,5"
-                          : null
-                      }
-                      isAlert={Boolean(markerType !== "normal")}
-                    />
+                {/* Yellow blinking hazard markers visible within last 5 minutes */}
+                <HazardLayer hazards={visibleHazards} />
+
+                <RecenterMap coords={coords} />
+
+                {/* Render Yourself */}
+                <Marker
+                  position={coords}
+                  icon={createPulsingIcon(
+                    userLocations[mySocketId]?.isStationary
+                      ? "#ef4444"
+                      : isOutsideGeofence(coords, geofence)
+                      ? "#f59e0b"
+                      : getUserColor(mySocketId),
+                    "You",
+                    userLocations[mySocketId]?.isStationary
+                      ? "stationary"
+                      : isOutsideGeofence(coords, geofence)
+                      ? "outside"
+                      : "normal"
                   )}
-                </React.Fragment>
-              );
-            })}
-          {/* Group Center */}
-          {groupCenter && (
-            <Marker
-              position={groupCenter}
-              icon={L.divIcon({
-                className: "group-center-marker",
-                html: `<div class="group-center"></div>`,
-                iconSize: [20, 20],
-                iconAnchor: [10, 10],
-              })}
-            >
-              <Popup>Group Center</Popup>
-            </Marker>
-          )}
-        </MapContainer>
+                >
+                  <Popup className="font-medium">
+                    {user?.name || "You"}
+                    {userLocations[mySocketId]?.isStationary && (
+                      <span className="block text-red-700 font-bold">
+                        Stationary - SOS
+                      </span>
+                    )}
+                    {isOutsideGeofence(coords, geofence) && (
+                      <span className="block text-orange-700 font-bold">
+                        Outside geofenced area!
+                      </span>
+                    )}
+                  </Popup>
+                </Marker>
+
+                {/* Render Other Users */}
+                {Object.entries(userLocations)
+                  .filter(([id]) => id !== mySocketId)
+                  .map(([id, u]) => {
+                    if (!u?.coords) return null;
+                    const now = Date.now();
+                    const isActive = now - u.lastSeen < INACTIVE_THRESHOLD;
+                    if (!isActive) return null;
+                    const outside = isOutsideGeofence(u.coords, geofence);
+                    const deviationDistance = calculateDeviation(u.coords);
+
+                    let markerType = null;
+                    if (u.isStationary) markerType = "stationary";
+                    else if (deviationDistance > DEVIATION_THRESHOLD)
+                      markerType = "far";
+                    else if (outside) markerType = "outside";
+                    else markerType = "normal";
+
+                    return (
+                      <React.Fragment key={id}>
+                        <Marker
+                          position={u.coords}
+                          icon={createPulsingIcon(
+                            markerType === "stationary"
+                              ? "#ef4444"
+                              : markerType === "far"
+                              ? "#eab308"
+                              : markerType === "outside"
+                              ? "#f59e0b"
+                              : getUserColor(id),
+                            u.username,
+                            markerType
+                          )}
+                        >
+                          <Popup className="font-medium">
+                            <div className="flex flex-col">
+                              <span>{u.username}</span>
+                              {markerType === "stationary" && (
+                                <span className="text-red-600 font-bold">
+                                  Stationary - SOS
+                                </span>
+                              )}
+                              {markerType === "far" && (
+                                <span className="text-yellow-600">
+                                  {Math.round(deviationDistance)}m from group
+                                </span>
+                              )}
+                              {markerType === "outside" && (
+                                <span className="text-orange-600 font-bold">
+                                  Outside geofenced area!
+                                </span>
+                              )}
+                            </div>
+                          </Popup>
+                        </Marker>
+
+                        {/* Polyline for movement */}
+                        {u.path && u.path.length > 1 && (
+                          <DecoratedPolyline
+                            positions={u.path}
+                            color={
+                              markerType === "stationary"
+                                ? "#ef4444"
+                                : markerType === "far"
+                                ? "#eab308"
+                                : markerType === "outside"
+                                ? "#f59e0b"
+                                : getUserColor(id)
+                            }
+                            weight={4}
+                            dashArray={
+                              markerType === "stationary" ||
+                              markerType === "far" ||
+                              markerType === "outside"
+                                ? "5,5"
+                                : null
+                            }
+                            isAlert={Boolean(markerType !== "normal")}
+                          />
+                        )}
+                      </React.Fragment>
+                    );
+                  })}
+                {/* Group Center */}
+                {groupCenter && (
+                  <Marker
+                    position={groupCenter}
+                    icon={L.divIcon({
+                      className: "group-center-marker",
+                      html: `<div class="group-center"></div>`,
+                      iconSize: [20, 20],
+                      iconAnchor: [10, 10],
+                    })}
+                  >
+                    <Popup>Group Center</Popup>
+                  </Marker>
+                )}
+
+                {/* SOS Button */}
+                <div className="absolute bottom-20 right-20 ">
+                  <button
+                    onClick={() => {
+                      playAlertSound();
+                      emitSOS();
+                    }}
+                    className="absolute z-[999] p-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-colors flex items-center justify-center"
+                    title="Send SOS"
+                  >
+                    <IoAlertCircle className="text-2xl" />
+                    <span className="absolute animate-ping inline-flex h-8 w-8 rounded-full bg-red-400 opacity-75" />
+                  </button>
+                </div>
+              </MapContainer>
+            </div>
+          </div>
+        </div>
 
         {/* Top Right Buttons */}
-        <div className="absolute top-4 right-4 space-y-2 z-[9999]">
-          <button
-            onClick={handleRecenter}
-            className="p-2 bg-white rounded-full shadow-md hover:bg-gray-50 transition-colors"
-            title="Recenter map"
-          >
-            <IoLocationSharp className="text-blue-500 text-xl" />
-          </button>
-          <button
-            onClick={() => setChatOpen(!chatOpen)}
-            className="p-2 bg-white rounded-full shadow-md hover:bg-gray-50 transition-colors relative"
-            title="Toggle chat"
-          >
-            <FiMessageSquare className="text-blue-500 text-xl" />
-            {messages.length > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
-                {messages.length}
+        <div className="absolute top-4 right-4 z-[9999] flex flex-col items-center gap-2">
+          {/* Main Buttons */}
+          <div className="flex items-center gap-3">
+            {/* Recenter */}
+            <button
+              onClick={handleRecenter}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Recenter map"
+            >
+              <IoLocationSharp className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+            </button>
+
+            {/* Chat */}
+            <button
+              onClick={() => setChatOpen(!chatOpen)}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Toggle chat"
+            >
+              <FiMessageSquare className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              {messages.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                  {messages.length}
+                </span>
+              )}
+            </button>
+
+            {/* Users */}
+            <button
+              onClick={() => setPanelOpen(!panelOpen)}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Toggle panel"
+            >
+              <FiUsers className="text-green-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                {activeUserCount}
               </span>
-            )}
-          </button>
-          <button
-            onClick={() => setPanelOpen(!panelOpen)}
-            className="p-2 bg-white rounded-full shadow-md hover:bg-gray-50 transition-colors relative"
-            title="Toggle panel"
-          >
-            <FiUsers className="text-blue-500 text-xl" />
-            <span className="absolute -top-1 -right-1 bg-green-500 text-white text-xs rounded-full h-4 w-4 flex items-center justify-center">
-              {activeUserCount}
-            </span>
-          </button>
-          <button
-            onClick={handleLeaveRoom}
-            className="p-2 bg-white rounded-full shadow-md hover:bg-gray-50 transition-colors"
-            title="Leave room"
-          >
-            <IoExitOutline className="text-red-500 text-xl" />
-          </button>
+            </button>
+
+            {/* Leave Room */}
+            <button
+              onClick={handleLeaveRoom}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-red-500/80 hover:text-white transition-all duration-300"
+              title="Leave room"
+            >
+              <IoExitOutline className="text-red-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+            </button>
+          </div>
+
+          {/* Hazard Buttons (Right of main buttons) */}
+          <div className="flex items-center gap-2 ml-2">
+            <button
+              onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
+              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-red-600 hover:text-white transition-all duration-300"
+              title="Mark Pothole"
+            >
+              <GiRoad className="text-red-500 group-hover:text-white text-xl" />
+              <span className="text-red-500 group-hover:text-white font-semibold text-sm">
+                Pothole
+              </span>
+            </button>
+
+            <button
+              onClick={() => addHazard("Accident", coords.lat, coords.lng)}
+              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-yellow-500 hover:text-white transition-all duration-300"
+              title="Mark Accident"
+            >
+              <MdOutlineWarning className="text-yellow-500 group-hover:text-white text-xl" />
+              <span className="text-yellow-500 group-hover:text-white font-semibold text-sm">
+                Accident
+              </span>
+            </button>
+          </div>
         </div>
-        {/* SOS Button */}
-        <button
-          onClick={() => {
-            playAlertSound();
-            emitSOS();
-          }}
-          className="absolute bottom-20 right-4 z-[9999] p-3 bg-red-500 text-white rounded-full shadow-lg hover:bg-red-600 transition-colors flex items-center justify-center"
-          title="Send SOS"
-        >
-          <IoAlertCircle className="text-2xl" />
-          <span className="absolute animate-ping inline-flex h-8 w-8 rounded-full bg-red-400 opacity-75" />
-        </button>
 
         {/* Users Panel */}
         {panelOpen && (
-          <div className="absolute top-4 left-4 w-64 bg-white/90 backdrop-blur rounded-md shadow-md z-[9999] overflow-hidden">
-            <div className="p-3 font-semibold border-b bg-white flex justify-between items-center">
+          <div className="absolute top-4 left-4 w-72 bg-gray-900/70 backdrop-blur-md rounded-xl shadow-2xl z-[9999] overflow-hidden border border-gray-700">
+            {/* Header */}
+            <div className="flex items-center justify-between p-3 bg-green-600 rounded-t-xl text-white font-semibold text-sm shadow-md">
               <span>Active Users ({activeUserCount})</span>
               <button
                 onClick={() => setPanelOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
+                className="text-white hover:text-gray-200 transition-all text-lg font-bold"
               >
                 ×
               </button>
-
-              <button
-                onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
-                className="p-2 bg-red-600 text-white rounded"
-              >
-                Mark Pothole
-              </button>
-
-              <button
-                onClick={() => addHazard("Accident", coords.lat, coords.lng)}
-                className="p-2 bg-yellow-600 text-white rounded ml-2"
-              >
-                Mark Accident
-              </button>
             </div>
-            <div className="max-h-64 overflow-y-auto">
-              {activeUsers.map((user, idx) => (
-                <div
-                  key={user.socketId}
-                  className={cn(
-                    "p-2 border-b flex items-center",
-                    userLocations[user.socketId]?.isStationary && "bg-red-50"
-                  )}
-                >
+
+            {/* Users List */}
+            <div className="max-h-64 overflow-y-auto divide-y divide-gray-700 scrollbar-thin scrollbar-thumb-green-500 scrollbar-track-gray-800">
+              {activeUsers.map((user) => {
+                const location = userLocations[user.socketId] || {};
+                const batteryLevel = location.battery?.level ?? null;
+                const outside = isOutsideGeofence(location?.coords, geofence);
+
+                return (
                   <div
-                    className="w-3 h-3 rounded-full mr-2"
-                    style={{
-                      backgroundColor: userLocations[user.socketId]
-                        ?.isStationary
-                        ? "#ef4444"
-                        : getUserColor(user.socketId),
-                    }}
-                  />
-                  <span className="truncate flex-1">
-                    {user.username}
-                    {user.socketId === mySocketId && " (You)"}
-                    {/* Battery indicator */}
-                    {userLocations[user.socketId]?.battery && (
-                      <span
-                        className="ml-2 text-xs"
+                    key={user.socketId}
+                    className={`flex items-center justify-between p-2 hover:bg-gray-800 rounded transition ${
+                      location.isStationary ? "bg-red-900/30" : ""
+                    }`}
+                  >
+                    <div className="flex items-center gap-2 truncate">
+                      <div
+                        className="w-3 h-3 rounded-full"
                         style={{
-                          color:
-                            userLocations[user.socketId].battery.level < 0.15
-                              ? "red"
-                              : userLocations[user.socketId].battery.level < 0.3
-                              ? "orange"
-                              : "inherit",
+                          backgroundColor: location.isStationary
+                            ? "#ef4444"
+                            : getUserColor(user.socketId),
                         }}
-                      >
-                        🔋{" "}
-                        {Math.round(
-                          userLocations[user.socketId].battery.level * 100
-                        )}
-                        %
-                        {userLocations[user.socketId].battery.charging
-                          ? "⚡"
-                          : ""}
-                        {userLocations[user.socketId].battery.level < 0.15
-                          ? " LOW"
-                          : ""}
+                      />
+                      <span className="truncate text-sm font-medium text-white">
+                        {user.username}
+                        {user.socketId === mySocketId && " (You)"}
                       </span>
-                    )}
-                    {/* OUTSIDE AREA indicator */}
-                    {isOutsideGeofence(
-                      userLocations[user.socketId]?.coords,
-                      geofence
-                    ) && (
-                      <span className="ml-2 text-xs text-orange-600">
-                        OUTSIDE AREA!
-                      </span>
-                    )}
-                  </span>
-                  {userLocations[user.socketId]?.isStationary && (
-                    <span className="text-red-600 text-xs font-bold">SOS</span>
-                  )}
-                </div>
-              ))}
+                    </div>
+
+                    <div className="flex items-center gap-1 text-xs">
+                      {/* Battery */}
+                      {batteryLevel !== null && (
+                        <span
+                          className={`font-medium ${
+                            batteryLevel < 0.15
+                              ? "text-red-500"
+                              : batteryLevel < 0.3
+                              ? "text-orange-400"
+                              : "text-green-400"
+                          }`}
+                          title={`Battery: ${Math.round(batteryLevel * 100)}%`}
+                        >
+                          🔋{Math.round(batteryLevel * 100)}%
+                          {location.battery?.charging ? "⚡" : ""}
+                        </span>
+                      )}
+
+                      {/* Outside geofence */}
+                      {outside && (
+                        <span className="text-orange-400 font-semibold">
+                          OUTSIDE!
+                        </span>
+                      )}
+
+                      {/* SOS */}
+                      {location.isStationary && (
+                        <span className="text-red-500 font-bold">SOS</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div className="p-2 border-t bg-white">
-              <label className="text-xs text-gray-500 block mb-1">
-                Trail Duration (minutes):
+
+            {/* Trail Duration */}
+            <div className="p-2 border-t border-gray-700">
+              <label className="text-xs text-gray-400 mb-1 block">
+                Trail Duration (minutes)
               </label>
               <select
                 value={trailDuration}
                 onChange={(e) => setTrailDuration(Number(e.target.value))}
-                className="w-full p-1 border rounded text-sm"
+                className="w-full p-1 border border-gray-600 rounded text-xs bg-gray-800 text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
               >
                 <option value={5}>5</option>
                 <option value={10}>10</option>
                 <option value={15}>15</option>
               </select>
             </div>
-            {/* Geofence radius control */}
-            <div className="p-2 border-t bg-white">
-              <label className="text-xs text-gray-500 block mb-1">
-                Geofence Radius (meters):
+
+            {/* Geofence Radius */}
+            <div className="p-2 border-t border-gray-700">
+              <label className="text-xs text-gray-400 mb-1 block">
+                Geofence Radius (meters)
               </label>
               <input
                 type="number"
-                min="100"
-                max="2000"
-                step="50"
+                min={100}
+                max={2000}
+                step={50}
                 value={geofence.radius}
                 onChange={(e) =>
                   setGeofence((g) => ({ ...g, radius: Number(e.target.value) }))
                 }
-                className="w-full p-1 border rounded text-sm"
+                className="w-full p-1 border border-gray-600 rounded text-xs bg-gray-800 text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
               />
             </div>
           </div>
@@ -1477,46 +1532,110 @@ const RoomMap = ({ room }) => {
 
         {/* Chat panel */}
         {chatOpen && (
-          <div className="absolute bottom-0 right-0 w-full md:w-96 max-h-[50%] bg-white/90 backdrop-blur-md shadow-lg rounded-t-md z-[9999] flex flex-col">
-            <div className="p-2 font-semibold border-b bg-white flex justify-between items-center">
-              <span>Room Chat</span>
-              <button
-                onClick={() => setChatOpen(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                ×
-              </button>
+          <div className="fixed bottom-6 right-2 w-[18%] min-w-[280px] max-w-[500px] max-h-[60%] flex flex-col z-[9999]">
+            {/* Chat Card */}
+            <div className="flex flex-col h-full rounded-2xl shadow-2xl bg-gray-900/95 border border-gray-700 overflow-hidden">
+              {/* Header */}
+              <div className="flex justify-between items-center p-3 bg-green-600 border-b border-gray-700">
+                <span className="text-white font-semibold text-md">
+                  Chatbox
+                </span>
+                <button
+                  onClick={() => setChatOpen(false)}
+                  className="text-white hover:text-red-500 transition-all text-xl font-bold"
+                >
+                  ×
+                </button>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 px-3 py-2 overflow-y-auto space-y-2 scrollbar-thin scrollbar-thumb-gray-500 scrollbar-track-gray-800">
+                {messages.map((msg, idx) => {
+                  const currentUser = user?.name?.trim().toLowerCase();
+                  const isSelf =
+                    msg.sender?.trim().toLowerCase() === currentUser;
+
+                  return (
+                    <div
+                      key={idx}
+                      className={`flex flex-col p-2 rounded-2xl max-w-[75%] ${
+                        isSelf
+                          ? "self-end bg-green-500 text-white"
+                          : "self-start bg-white text-gray-900 border border-gray-300"
+                      } shadow`}
+                    >
+                      {!isSelf && (
+                        <span className="text-xs font-semibold text-gray-400 mb-1">
+                          {msg.sender}
+                        </span>
+                      )}
+                      <span className="text-sm break-words">{msg.content}</span>
+                      <span
+                        className={`text-[9px] mt-1 flex justify-end ${
+                          isSelf ? "text-green-100" : "text-gray-500"
+                        }`}
+                      >
+                        {new Date(msg.timestamp).toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
+                      </span>
+                    </div>
+                  );
+                })}
+                <div ref={messagesEndRef} />
+              </div>
+
+              {/* Input */}
+              <div className="flex items-center p-2 bg-gray-800 border-t border-gray-700">
+                <input
+                  type="text"
+                  placeholder="Type a message..."
+                  value={newMessage}
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
+                  className="flex-1 px-3 py-2 rounded-full bg-gray-700 text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-green-500 transition"
+                />
+                <button
+                  onClick={handleSendMessage}
+                  className="ml-2 px-3 py-2 rounded-full bg-green-500 hover:bg-green-600 text-white shadow-md transition"
+                >
+                  <IoMdSend className="text-lg" />
+                </button>
+              </div>
             </div>
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 text-sm">
-              {messages.map((msg, idx) => (
-                <div key={idx} className="flex flex-col">
-                  <span className="font-semibold text-gray-700">
-                    {msg.sender}
-                  </span>
-                  <span className="text-gray-600">{msg.content}</span>
-                  <span className="text-xs text-gray-400">
-                    {new Date(msg.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-              ))}
-              <div ref={messagesEndRef} />
-            </div>
-            <div className="flex border-t bg-white">
-              <input
-                ref={chatInputRef}
-                type="text"
-                placeholder="Type your message..."
-                value={newMessage}
-                onChange={(e) => setNewMessage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSendMessage()}
-                className="flex-1 px-3 py-2 text-sm outline-none"
-              />
-              <button
-                onClick={handleSendMessage}
-                className="px-4 bg-blue-500 text-white hover:bg-blue-600"
-              >
-                <IoMdSend />
-              </button>
+          </div>
+        )}
+
+        {/*  leave Model */}
+
+        {showLeaveModal && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]">
+            <div className="bg-gray-900 rounded-xl p-6 w-80 text-white shadow-2xl">
+              <h2 className="text-lg font-semibold mb-4">Leave Room</h2>
+              <p className="text-sm mb-6">
+                Are you sure you want to leave the room?
+              </p>
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setShowLeaveModal(false)}
+                  className="px-4 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    if (socket.connected) {
+                      socket.emit("leave-room", { roomCode, userId: user.id });
+                      disconnectSocket();
+                    }
+                    window.location.href = "/";
+                  }}
+                  className="px-4 py-2 rounded-lg bg-red-500 hover:bg-red-600 transition"
+                >
+                  Leave
+                </button>
+              </div>
             </div>
           </div>
         )}

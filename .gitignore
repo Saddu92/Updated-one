@@ -26,3 +26,9 @@ yarn.lock
 
 # Misc
 *.tgz
+
+
+.history*.swp
+*.swo
+
+.history/

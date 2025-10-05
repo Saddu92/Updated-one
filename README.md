@@ -17,14 +17,17 @@
 ---
 
 ## 📑 Table of Contents
-- [About](#-about)
-- [Why SyncFleet?](#-why-syncfleet)
-- [Key Features](#-key-features)
-- [Tech Stack](#-tech-stack)
-- [How It Works](#-how-it-works)
-- [Future Enhancements](#-future-enhancements)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [📑 Table of Contents](#-table-of-contents)
+- [🧭 About](#-about)
+- [🌟 Why SyncFleet?](#-why-syncfleet)
+- [🔑 Key Features](#-key-features)
+- [🛠️ Tech Stack](#️-tech-stack)
+  - [Frontend](#frontend)
+  - [Backend](#backend)
+- [⚙️ How It Works](#️-how-it-works)
+- [🚧 Future Enhancements](#-future-enhancements)
+- [🤝 Contributing](#-contributing)
+- [📜 License](#-license)
 
 ---
 
@@ -108,3 +111,14 @@ This project is licensed under the **MIT License**.
 ---
 
 💡 *SyncFleet is built to make group coordination smarter, safer, and faster. If you like this project, don’t forget to ⭐ the repo!*  
+
+
+# What Changes are Done
+Better Navbar
+Better Room Map
+Restructured it Fully
+All Things are Working Fine 
+Implemented Redux 
+Better Footer 
+Better UI 
+Made it Responsive 

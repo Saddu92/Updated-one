@@ -1,22 +1,29 @@
 import { useNavigate } from "react-router-dom";
 import React, { useEffect, useState } from "react";
-import { getSocket } from "../utils/socket";
 import API from "../utils/axios.js";
 import { MY_ROOM } from "@/utils/constant.js";
-import RoomMap from "./RoomMap";
+import { useAuthStore } from "@/store/auth";
+import { Link } from "react-router-dom";
+import Footer from "@/components/Footer.jsx";
+import { HiMenu, HiX } from "react-icons/hi";
 
 const Dashboard = () => {
   const navigate = useNavigate();
   const [myRooms, setMyRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
+  const { user, logout } = useAuthStore();
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
 
   useEffect(() => {
+    if (!user) {
+      navigate("/login");
+      return;
+    }
 
     const fetchRooms = async () => {
       try {
-        const token = localStorage.getItem("token");
         const res = await API.get(MY_ROOM, {
-          headers: { Authorization: `Bearer ${token}` },
+          headers: { Authorization: `Bearer ${user.token}` },
         });
         setMyRooms(res.data.rooms || []);
       } catch (err) {
@@ -25,129 +32,198 @@ const Dashboard = () => {
     };
 
     fetchRooms();
-  }, []);
-    
-  const handleJoinRoom = async (roomCode) => {
-  setActiveRoom(roomCode);
-  navigate(`/room/${roomCode}/map`);
-};
+  }, [user, navigate]);
 
-  
+  const handleJoinRoom = async (roomCode) => {
+    setActiveRoom(roomCode);
+    navigate(`/room/${roomCode}/map`);
+  };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-white via-gray-100 to-gray-200">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] font-inter">
       {/* Navbar */}
-      <nav className="bg-white shadow-md py-4 px-8 border-b border-gray-100">
+      <nav className="backdrop-blur-md py-4 px-4 sm:px-8 shadow-md sticky top-0 z-50">
         <div className="flex justify-between items-center max-w-7xl mx-auto">
-          <span className="text-2xl font-black bg-gradient-to-r from-gray-700 via-gray-900 to-black bg-clip-text text-transparent">
+          <Link
+            to={"/"}
+            className="text-3xl font-orbitron text-cyan-400 tracking-wide"
+          >
             SyncFleet
-          </span>
-          <div className="space-x-2">
+          </Link>
+
+          {/* Desktop Buttons (unchanged) */}
+          <div className="hidden sm:flex space-x-6">
             <button
               onClick={() => navigate("/")}
-              className="text-gray-800 font-medium hover:text-black transition px-2"
+              className="text-gray-300 hover:text-[#FFD369] font-medium transition"
             >
               Home
             </button>
             <button
               onClick={() => navigate("/my-rooms")}
-              className="text-gray-800 font-medium hover:text-black transition px-2"
+              className="text-gray-300 hover:text-[#FFD369] font-medium transition"
             >
               My Rooms
             </button>
             <button
-              onClick={() => navigate("/logout")}
-              className="bg-gradient-to-r from-black via-gray-800 to-gray-900 text-white px-4 py-1 rounded hover:from-gray-700 hover:to-black text-sm font-medium transition"
+              onClick={() => {
+                logout();
+                navigate("/");
+              }}
+              className="bg-[#FFD369] text-black px-4 py-2 rounded-lg font-semibold hover:scale-105 hover:shadow-lg transition"
             >
               Logout
             </button>
           </div>
+
+          {/* Hamburger for Mobile */}
+          <div className="sm:hidden">
+            <button
+              onClick={() => setIsMenuOpen(!isMenuOpen)}
+              className="text-gray-300 focus:outline-none"
+            >
+              {isMenuOpen ? (
+                <HiX className="w-6 h-6" />
+              ) : (
+                <HiMenu className="w-6 h-6" />
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Mobile Menu */}
+        {isMenuOpen && (
+          <div className="sm:hidden mt-2 flex flex-col gap-2">
+            <button
+              onClick={() => {
+                navigate("/");
+                setIsMenuOpen(false);
+              }}
+              className="text-gray-300 hover:text-[#FFD369] font-medium py-2 w-full text-center"
+            >
+              Home
+            </button>
+            <button
+              onClick={() => {
+                navigate("/my-rooms");
+                setIsMenuOpen(false);
+              }}
+              className="text-gray-300 hover:text-[#FFD369] font-medium py-2 w-full text-center"
+            >
+              My Rooms
+            </button>
+            <button
+              onClick={() => {
+                logout();
+                navigate("/");
+                setIsMenuOpen(false);
+              }}
+              className="bg-[#FFD369] text-black px-4 py-2 rounded-lg font-semibold hover:scale-105 hover:shadow-lg w-full text-center"
+            >
+              Logout
+            </button>
+          </div>
+        )}
       </nav>
 
-      {/* Hero Section */}
-      <header className="bg-gradient-to-b from-white via-gray-50 to-gray-100 py-10 flex-grow">
-        <div className="max-w-5xl mx-auto px-6 text-center">
-          <h1 className="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-gray-800 via-black to-gray-600 mb-4">
-            Welcome to SyncFleet Dashboard
-          </h1>
-          <p className="text-gray-600 mb-8 text-lg">
-            Create or Join a Room to start tracking your team in real time.
-          </p>
-          <div className="flex justify-center space-x-4">
-            <button
-              onClick={() => navigate("/create-room")}
-              className="bg-gradient-to-r from-black via-gray-800 to-gray-900 text-white px-6 py-2 rounded-md text-lg font-semibold hover:from-gray-700 hover:to-black transition"
-            >
-              ➕ Create Room
-            </button>
-            <button
-              onClick={() => navigate("/join-room")}
-              className="text-gray-900 border border-gray-800 px-6 py-2 rounded-md text-lg font-semibold hover:bg-gray-100 transition"
-            >
-              🔗 Join Room
-            </button>
-          </div>
-        </div>
-      </header>
+      {/* Hero + Stats + Forms */}
+      <section className="py-16 px-6 max-w-6xl mx-auto">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+          {/* Left: Stats + Buttons */}
+          <div className="flex flex-col gap-8">
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-lg text-center">
+                <p className="text-gray-300 font-medium">Total Rooms</p>
+                <p className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+                  {myRooms.length}
+                </p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-lg text-center">
+                <p className="text-gray-300 font-medium">Active Room</p>
+                <p className="text-2xl font-bold text-green-400">
+                  {activeRoom || "None"}
+                </p>
+              </div>
+              <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-lg text-center">
+                <p className="text-gray-300 font-medium">Total Members</p>
+                <p className="text-2xl font-bold text-yellow-400">
+                  {myRooms.reduce(
+                    (sum, room) => sum + (room.members?.length || 0),
+                    0
+                  )}
+                </p>
+              </div>
+            </div>
 
-      {/* Room List & Map */}
-      <section className="max-w-6xl mx-auto my-12 px-4 w-full">
-  <h2 className="text-2xl font-semibold mb-4 text-gray-900">My Rooms</h2>
-  {myRooms.length === 0 ? (
-    <p className="text-gray-500 text-center">
-      You haven't joined or created any rooms yet.
-    </p>
-  ) : (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-      {myRooms.map(room => (
-        <div
-          key={room._id}
-          className="bg-white border border-gray-200 rounded-xl shadow hover:shadow-md transition p-6 flex flex-col justify-between cursor-pointer"
-          onClick={() => handleJoinRoom(room.code)}
-        >
-          <div>
-            <div className="flex items-center gap-2 mb-2">
-              <span className="inline-block bg-gray-100 text-gray-700 p-2 rounded-full">
-                {/* Map Icon Example (can use react-icons): */}
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path d="M9 20V6l6-2v14" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                </svg>
-              </span>
-              <span className="inline-block font-semibold text-lg text-gray-900">{room.name || room.code}</span>
+            {/* Create & Join Buttons */}
+            <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
+              <button
+                onClick={() => navigate("/create-room")}
+                className="lg:w-full sm:w-auto bg-gradient-to-r from-cyan-400 to-blue-500 text-black py-4 rounded-xl font-semibold hover:from-yellow-400 hover:to-orange-500 transition"
+              >
+                Create Room
+              </button>
+              <button
+                onClick={() => navigate("/join-room")}
+                className="lg:w-full sm:w-auto bg-gradient-to-r from-cyan-400 to-blue-500 text-black py-4 rounded-xl font-semibold hover:from-yellow-400 hover:to-orange-500 transition"
+              >
+                Join Room
+              </button>
             </div>
-            <div className="text-sm text-gray-500 mb-1">
-              {room.members ? `${room.members.length} Members` : "— Members"}
-            </div>
-            <div className="text-xs text-gray-400">
-              Last Active:
-              {room.lastActive 
-                ? ` ${room.lastActive}` 
-                : " Unknown"}
+
+            {/* Recent Activity */}
+            <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-3xl p-6 shadow-lg flex flex-col gap-4">
+              <h3 className="text-xl font-orbitron font-bold text-cyan-400">
+                Recent Activity
+              </h3>
+              <p className="text-gray-300 text-sm">No recent activity yet.</p>
             </div>
           </div>
-          <button
-            className={`mt-6 w-full rounded-lg py-2 font-semibold transition 
-              ${
-                activeRoom === room.code
-                  ? "bg-gray-900 text-white"
-                  : "bg-gradient-to-r from-black via-gray-800 to-gray-900 text-white hover:from-gray-700 hover:to-black"
-              }
-            `}
-          >
-            {activeRoom === room.code ? "✅ Joined" : "Join"}
-          </button>
-        </div>
-      ))}
-    </div>
-  )}
-</section>
 
+          {/* Right: My Rooms List */}
+          <div className="flex flex-col gap-4 max-h-[600px] overflow-x-hidden">
+            <h3 className="text-cyan-400 font-orbitron font-bold text-xl mb-4">
+              My Rooms
+            </h3>
+            {myRooms.length === 0 ? (
+              <p className="text-gray-300">
+                You haven’t created or joined any rooms yet.
+              </p>
+            ) : (
+              myRooms.map((room) => (
+                <div
+                  key={room._id}
+                  className="bg-white/10 border-l-4 border-cyan-400 rounded-2xl p-4 backdrop-blur-lg shadow hover:shadow-xl transform transition flex justify-between items-center"
+                >
+                  <div
+                    className="flex-1 cursor-pointer"
+                    onClick={() => handleJoinRoom(room.code)}
+                  >
+                    <span className="text-white font-semibold">
+                      {room.name || room.code}
+                    </span>
+                  </div>
+
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${
+                      activeRoom === room.code
+                        ? "bg-green-400 text-black"
+                        : "bg-gradient-to-r from-cyan-400 to-blue-500 text-black hover:from-yellow-400 hover:to-orange-500"
+                    }`}
+                    onClick={() => handleJoinRoom(room.code)}
+                  >
+                    {activeRoom === room.code ? "Joined" : "Join"}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </section>
 
       {/* Footer */}
-      <footer className="bg-white text-gray-500 text-sm text-center py-4 mt-auto border-t border-gray-100">
-        © {new Date().getFullYear()} SyncFleet. All rights reserved.
-      </footer>
+      <Footer />
     </div>
   );
 };

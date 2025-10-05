@@ -61,6 +61,29 @@ export const createRoom = async (req, res) => {
 
 
 
+// export const joinRoom = async (req, res) => {
+//   try {
+//     const { code } = req.body;
+//     if (!code)
+//       return res.status(400).json({ message: "Room code is required" });
+
+//     const room = await Room.findOne({ code });
+
+//     if (!room) return res.status(404).json({ message: "Room not found" });
+
+//     // Check if user already a member
+//     if (room.members.includes(req.user._id)) {
+//       return res.status(400).json({ message: "You already joined this room" });
+//     }
+
+//     // Add user to members
+//     room.members.push(req.user._id);
+//     await room.save();
+//   } catch (error) {
+//     res.status(500).json({ message: "Join room failed", error: error.message });
+//   }
+// };
+
 export const joinRoom = async (req, res) => {
   try {
     const { code } = req.body;
@@ -68,21 +91,40 @@ export const joinRoom = async (req, res) => {
       return res.status(400).json({ message: "Room code is required" });
 
     const room = await Room.findOne({ code });
-
     if (!room) return res.status(404).json({ message: "Room not found" });
 
-    // Check if user already a member
+    if (!req.user || !req.user._id)
+      return res.status(401).json({ message: "User authentication required" });
+
     if (room.members.includes(req.user._id)) {
       return res.status(400).json({ message: "You already joined this room" });
     }
 
-    // Add user to members
-    room.members.push(req.user._id);
-    await room.save();
+    // ✅ Update members only without triggering full validation
+    await Room.updateOne(
+      { _id: room._id },
+      { $addToSet: { members: req.user._id } } // prevents duplicates
+    );
+
+    // Optional: update user’s joinedRooms array
+    await User.findByIdAndUpdate(req.user._id, {
+      $addToSet: { joinedRooms: room._id },
+    });
+
+    res.status(200).json({
+      message: "Joined room successfully",
+      roomCode: room.code,
+    });
   } catch (error) {
+    console.error("Join Room Error:", error);
     res.status(500).json({ message: "Join room failed", error: error.message });
   }
 };
+
+
+
+
+
 
 export const getMyRooms = async (req, res) => {
   try {
