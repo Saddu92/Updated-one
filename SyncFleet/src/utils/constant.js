@@ -14,4 +14,3 @@ export const GEOCODE = `${ORS_ROUTES}/geocode`;
 export const DIRECTIONS = `${ORS_ROUTES}/directions`;
 
 
-

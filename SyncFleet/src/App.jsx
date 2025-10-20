@@ -6,7 +6,7 @@ import Dashboard from './pages/Dashboard';
 import CreateRoom from './pages/CreateRoom';
 import JoinRoom from './pages/JoinRoom';
 import { Toaster } from 'react-hot-toast';
-import RoomMap from './pages/RoomMap';
+import RoomMap from './components/RoomMap';
 import About from "./pages/About";
 import Contact from "./pages/Contact";
 import Help from "./pages/Help";

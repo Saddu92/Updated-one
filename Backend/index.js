@@ -8,6 +8,7 @@ import authRoutes from "./routes/authRoutes.js";
 import roomRoutes from "./routes/roomRoutes.js";
 import haversine from "haversine-distance";
 import orsRoutes from "./routes/orsRoutes.js";
+import { isOutsideGeofence } from "../SyncFleet/src/utils/helper.js";
 
 dotenv.config();
 connectDB();
@@ -21,6 +22,7 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+
 
 app.use(cors());
 app.use(express.json());
@@ -72,6 +74,8 @@ io.on("connection", (socket) => {
     socket.to(roomCode).emit("user-joined", { username, socketId: socket.id });
   });
 
+  const DEVIATION_COOLDOWN = 30000; // 1 minute
+const lastDeviationAlert = new Map(); // socket.id => timestamp
   socket.on("location-update", ({ roomCode, coords }) => {
     if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
       console.warn("❗ location-update failed:", { roomCode, coords, user: socket.data });
@@ -98,35 +102,128 @@ io.on("connection", (socket) => {
       lng: allCoords.reduce((sum, loc) => sum + loc.lng, 0) / allCoords.length,
     };
 
-    const myDistance = haversine(coords, center);
-    if (myDistance > DEVIATION_THRESHOLD) {
-      io.to(roomCode).emit("anomaly-alert", {
-        type: "deviation",
-        userId: socket.id,
-        username: socket.data.username,
-        location: coords,
-        distance: Math.round(myDistance),
-      });
-      console.log(`⚠️ ${socket.data.username} is deviating by ${Math.round(myDistance)}m`);
-    }
-  });
+    // const myDistance = haversine(coords, center);
+    // if (myDistance > DEVIATION_THRESHOLD) {
+    //   io.to(roomCode).emit("anomaly-alert", {
+    //     type: "deviation",
+    //     userId: socket.id,
+    //     username: socket.data.username,
+    //     location: coords,
+    //     distance: Math.round(myDistance),
+    //   });
+    //   console.log(`⚠️ ${socket.data.username} is deviating by ${Math.round(myDistance)}m`);
+    // }
 
-  socket.on("chat-message", ({ roomCode, message }) => {
-    if (!roomCode || !message || !socket.data.username) {
-      console.warn("❗ chat-message failed:", { roomCode, message, user: socket.data });
-      return;
-    }
 
-    console.log(`💬 Chat from ${socket.data.username}: ${message.content}`);
-    io.to(roomCode).emit("room-message", {
-      from: socket.id, // Use socket.id to identify sender
-      message: {
-        ...message,
-        sender: socket.data.username, // Ensure sender is set correctly
-      },
+    const fence = {
+  center: { lat:coords.lat,lng: coords.lng},
+  radius: 300, // meters
+};
+
+const outside = isOutsideGeofence(coords, fence);
+
+if (outside) {
+  const now = Date.now();
+  const lastAlert = lastDeviationAlert.get(socket.id) || 0;
+  if (now - lastAlert > DEVIATION_COOLDOWN) {
+    // Emit anomaly-alert event for other UI usage
+    io.to(roomCode).emit("anomaly-alert", {
+      type: "geofence",
+      userId: socket.id,
+      username: socket.data.username,
+      coords,
     });
+
+    // Emit as chat message so it shows in chat box
+    // io.to(roomCode).emit("room-message", {
+    //   from: "system",
+    //   message: {
+    //     type: "warning",
+    //     content: `⚠️ ${socket.data.username} is outside the geofence!`,
+    //     sender: "System",
+    //     coords,
+    //     timestamp: Date.now(),
+    //   },
+    // });
+
+    const room = getRoom(roomCode);
+const isCreator = (socket.data.userId === room.creatorId);
+
+if (isCreator) {
+  // Perform full geofence checks on creator only
+  if (isOutsideGeofence(coords, geofence)) {
+    io.to(roomCode).emit("room-message", {
+      from: "System",
+      type: "warning",
+      content: `${socket.data.username} (creator) is outside the geofence!`,
+    });
+  }
+} else {
+  // For other members, only check if outside to send notifications
+  if (isOutsideGeofence(coords, geofence)) {
+    // Notify all except the user who is outside
+    io.to(roomCode).emit("room-message", {
+      from: "System",
+      type: "warning",
+      content: `${socket.data.username} is outside the group's area!`,
+    });
+    // Send private message to the user
+    socket.emit("room-message", {
+      from: "System",
+      type: "warning",
+      content: "You are getting far from your group",
+    });
+  }
+}
+
+
+    lastDeviationAlert.set(socket.id, now);
+  }
+}
+
   });
 
+socket.on("chat-message", ({ roomCode, message }) => {
+  if (!roomCode || !message || !socket.data.username) {
+    console.warn("⚠️ chat-message failed:", { roomCode, message, user: socket.data });
+    return;
+  }
+
+  console.log(`💬 Chat from ${socket.data.username}: ${message.content}`);
+  
+  // Check if this is an SOS message
+  if (message.type === "sos") {
+    // Broadcast SOS status to all users in room
+    io.to(roomCode).emit("user-sos", {
+      socketId: socket.id,
+      username: socket.data.username,
+      userId: socket.data.userId,
+    });
+    
+    console.log(`🚨 SOS Alert from ${socket.data.username} in room ${roomCode}`);
+  }
+  
+  io.to(roomCode).emit("room-message", {
+    from: socket.id,
+    message: {
+      ...message,
+      sender: socket.data.username,
+    },
+  });
+});
+
+// Add handler to clear SOS status when user moves
+socket.on("clear-sos", ({ roomCode }) => {
+  if (!roomCode || !socket.data.username) return;
+  
+  io.to(roomCode).emit("user-sos-cleared", {
+    socketId: socket.id,
+    username: socket.data.username,
+    userId: socket.data.userId,
+  });
+  
+  console.log(`✅ SOS cleared for ${socket.data.username} in room ${roomCode}`);
+});
 // Listen for hazard reports from a user
 // Listen for hazard reports from a user
 socket.on("add-hazard", (data) => {

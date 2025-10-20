@@ -1,0 +1,768 @@
+// components/RoomMap.jsx
+import React, {
+  useState,
+  useRef,
+  useCallback,
+  useMemo,
+  useEffect,
+} from "react";
+import { useParams } from "react-router-dom";
+import { getSocket, disconnectSocket } from "../utils/socket.js";
+import { useAuthStore } from "../store/auth";
+import haversine from "haversine-distance";
+import {
+  IoLocationSharp,
+  IoExitOutline,
+} from "react-icons/io5";
+import { FiUsers, FiMessageSquare } from "react-icons/fi";
+import { GiRoad } from "react-icons/gi";
+import { MdOutlineWarning } from "react-icons/md";
+import useSound from "use-sound";
+import notificationSound from "../assets/notification.mp3";
+import axios from "axios";
+import { GEOCODE, ROOM_BY_CODE } from "../utils/constant.js";
+import API from "../utils/axios.js";
+import {
+  COLORS,
+  DEFAULT_TRAIL_DURATION,
+  INACTIVE_THRESHOLD,
+  SOS_DURATION,
+} from "../utils/helper.js";
+import { useRoomSocket } from "../hooks/useRoomSocket.js";
+import { useGeoWatcher } from "../hooks/useGeoWatcher.js";
+import { useStationaryDetection } from "../hooks/useStationaryDetection.js";
+import MapDisplay from "./MapDisplay.jsx";
+import SOSButton from "./SOSButton.jsx";
+import ChatPanel from "./ChatPanel.jsx";
+import UsersPanel from "./UsersPanel.jsx";
+import StationaryModal from "./StationaryModal.jsx";
+import LeaveRoomModal from "./LeaveRoomModal.jsx";
+import Toast from "./Toast.jsx";
+
+class ErrorBoundary extends React.Component {
+  state = { hasError: false, error: null };
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, errorInfo) {
+    console.error("ErrorBoundary caught an error:", error, errorInfo);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="flex items-center justify-center h-screen">
+          <div className="text-center max-w-md p-4 bg-red-50 rounded-lg">
+            <p className="text-red-500 text-lg">
+              {this.state.error?.message || "Unknown error"}
+            </p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+export async function apiCallToGetRoom(roomCode) {
+  try {
+    const res = await API.get(ROOM_BY_CODE(roomCode));
+    return res.data;
+  } catch (err) {
+    console.error("Error fetching room:", err);
+    throw err;
+  }
+}
+
+async function geocodeLocation(location) {
+  try {
+    let res;
+    if (typeof location === "string" || location?.displayName) {
+      const address =
+        typeof location === "string" ? location : location.displayName;
+      res = await API.get(GEOCODE, { params: { text: address } });
+    } else if (location?.lat && location?.lng) {
+      res = await API.get(GEOCODE, {
+        params: { lat: location.lat, lon: location.lng },
+      });
+    } else {
+      console.warn("⚠️ geocodeLocation called with invalid input:", location);
+      return null;
+    }
+
+    if (res.data?.lat != null && res.data?.lng != null) {
+      return { lat: parseFloat(res.data.lat), lng: parseFloat(res.data.lng) };
+    }
+
+    if (
+      Array.isArray(res.data) &&
+      res.data?.lat != null &&
+      res.data?.lon != null
+    ) {
+      return { lat: parseFloat(res.data.lat), lng: parseFloat(res.data.lon) };
+    }
+
+    console.warn("No coordinates found for:", location, res.data);
+    return null;
+  } catch (error) {
+    console.error("❌ Geocode error", error?.response?.data || error.message);
+    return null;
+  }
+}
+
+const RoomMap = ({ room }) => {
+  const { code: roomCode } = useParams();
+  const socket = getSocket();
+  const [playAlertSound] = useSound(notificationSound, { interrupt: true });
+  const [toast, setToast] = useState(null);
+
+  // User states
+  const [user, setUser] = useState(null);
+  const [isUserReady, setIsUserReady] = useState(false);
+
+  // UI states
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [chatOpen, setChatOpen] = useState(true);
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [trailDuration, setTrailDuration] = useState(DEFAULT_TRAIL_DURATION);
+  const [geofence, setGeofence] = useState({
+    center: null,
+    radius: 300,
+  });
+  const [currentRoom, setCurrentRoom] = useState(null);
+  const [sourceCoords, setSourceCoords] = useState(null);
+  const [destinationCoords, setDestinationCoords] = useState(null);
+  const [hazards, setHazards] = useState([]);
+  
+  const [shouldRecenter, setShouldRecenter] = useState(false);
+  const [isRoomCreator, setIsRoomCreator] = useState(false);
+  const [roomCreatorId, setRoomCreatorId] = useState(null);
+
+  // Refs
+  const mapRef = useRef();
+  const toastTimeoutRef = useRef(null);
+
+  const trailExpiryMs = useMemo(
+    () => trailDuration * 60 * 1000,
+    [trailDuration]
+  );
+
+  // Toast helper
+  const showToast = useCallback((message, type = "info") => {
+    clearTimeout(toastTimeoutRef.current);
+    setToast({ message, type });
+    toastTimeoutRef.current = setTimeout(() => setToast(null), 5000);
+  }, []);
+
+  
+
+
+
+  // Custom hooks
+  const { coords, locationError } = useGeoWatcher({
+    isUserReady,
+    user,
+    onPositionUpdate: (newCoords) => {
+      if (!user?.id || !user?.name || !socket.connected) return;
+      socket.emit(
+        "location-update",
+        {
+          roomCode,
+          coords: newCoords,
+          user: {
+            id: user.id,
+            name: user.name,
+          },
+        },
+        (ack) => {
+          if (ack?.error) {
+            showToast("Failed to update location", "danger");
+          }
+        }
+      );
+    },
+  });
+
+  const {
+    mySocketId,
+    isConnecting,
+    activeUsers,
+    userLocations,
+    alertUsers,
+    userTrails,
+    setUserLocations,
+    setAlertUsers,
+  } = useRoomSocket({
+    roomCode,
+    user,
+    isUserReady,
+    trailExpiryMs,
+    showToast,
+    playAlertSound,
+    onRoomMessage: ({ from, message }) => {
+      if (from !== socket.id) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            ...message,
+            sender:
+              message.sender || userLocations[from]?.username || "Unknown",
+          },
+        ]);
+      }
+    },
+    onAnomalyAlert: (data) => {
+      setMessages((prev) => [
+        ...prev,
+        {
+          type: "anomaly",
+          sender: "System",
+          content:
+            data.type === "sos"
+              ? `🚨 SOS Alert from ${data.username}`
+              : `⚠️ ${data.username} is ${Math.round(
+                  data.distance
+                )}m away from the group!`,
+          timestamp: new Date().toISOString(),
+        },
+      ]);
+    },
+  });
+  // SOS emitter
+const emitSOS = useCallback(() => {
+  if (!socket.connected) {
+    showToast("Cannot send SOS - disconnected from server", "danger");
+    return;
+  }
+
+  // Play alert sound once
+  playAlertSound();
+
+  // Emit single SOS event
+  const message = {
+    type: "sos",
+    content: `🚨 SOS Alert from ${user?.name}`,
+    sender: user?.name || "You",
+    timestamp: new Date().toISOString(),
+  };
+  socket.emit("chat-message", { roomCode, message });
+
+  // Update local user status
+  setUserLocations((prev) => ({
+    ...prev,
+    [mySocketId]: {
+      ...prev[mySocketId],
+      isSOS: true,
+      sosStartTime: Date.now()
+    },
+  }));
+
+  // Reset after SOS_DURATION
+  setTimeout(() => {
+    setUserLocations((prev) => ({
+      ...prev,
+      [mySocketId]: {
+        ...prev[mySocketId],
+        isSOS: false
+      },
+    }));
+  }, SOS_DURATION);
+}, [socket, roomCode, user, showToast, mySocketId, playAlertSound]);
+
+  const {
+    checkStationary,
+    showStationaryPrompt,
+    handleStationaryYes,
+    handleStationaryNo,
+  } = useStationaryDetection({
+    mySocketId,
+    setUserLocations,
+    emitSOS,
+  });
+
+
+
+  // Load user and check room creator
+  const { user: authUser } = useAuthStore();
+
+  useEffect(() => {
+    const loadUser = async () => {
+      try {
+        if (!authUser) {
+          window.location.href = "/login";
+          return;
+        }
+        
+        setUser(authUser);
+        // Fetch room data to check if user is creator
+        const roomData = await apiCallToGetRoom(roomCode);
+        setCurrentRoom(roomData);
+        const isCreator = roomData?.createdBy === authUser.id;
+        setIsRoomCreator(isCreator);
+      } catch (e) {
+        console.error("Error loading room:", e);
+        if (e.response?.status === 401) {
+          window.location.href = "/login";
+        }
+      }
+    };
+    loadUser();
+    setIsUserReady(true);
+  }, [roomCode, authUser]);
+
+  // Fetch room data
+  useEffect(() => {
+    async function fetchRoom() {
+      const roomData = await apiCallToGetRoom(roomCode);
+      setCurrentRoom(roomData);
+
+      if (roomData?.source && roomData?.destination) {
+        const sCoords = await geocodeLocation(roomData.source);
+        const dCoords = await geocodeLocation(roomData.destination);
+        setSourceCoords(sCoords);
+        setDestinationCoords(dCoords);
+      }
+    }
+    fetchRoom();
+  }, [roomCode]); 
+
+  // Set geofence center
+  useEffect(() => {
+    if (coords && !geofence.center) {
+      setGeofence((prev) => ({
+        ...prev,
+        center: coords,
+        radius: 300,
+      }));
+    }
+  }, [coords, geofence.center]);
+
+  // Set recenter only on initial mount
+useEffect(() => {
+    setShouldRecenter(true);
+    // Turn off automatic recentering after initial mount
+    setTimeout(() => {
+        setShouldRecenter(false);
+    }, 1000);
+}, []); // Only on initial mount
+
+  // Battery monitoring
+  useEffect(() => {
+    let batteryRef = null;
+    let lastSentLevel = null;
+
+    const sendBatteryStatus = () => {
+      if (!batteryRef || !user?.id || !socket) return;
+      const data = {
+        level: batteryRef.level,
+        charging: batteryRef.charging,
+        ts: Date.now(),
+      };
+      localStorage.setItem("batteryStatus", JSON.stringify(data));
+      if (batteryRef.level !== lastSentLevel) {
+        socket.emit("battery-status", {
+          roomCode,
+          userId: user.id,
+          level: batteryRef.level,
+          charging: batteryRef.charging,
+        });
+        lastSentLevel = batteryRef.level;
+      }
+    };
+
+    if (!navigator.getBattery) return;
+    navigator.getBattery().then((battery) => {
+      batteryRef = battery;
+      battery.addEventListener("levelchange", sendBatteryStatus);
+      battery.addEventListener("chargingchange", sendBatteryStatus);
+      sendBatteryStatus();
+    });
+
+    return () => {
+      if (batteryRef) {
+        batteryRef.removeEventListener("levelchange", sendBatteryStatus);
+        batteryRef.removeEventListener("chargingchange", sendBatteryStatus);
+      }
+    };
+  }, [socket, user, roomCode]);
+
+  useEffect(() => {
+    const socket = getSocket();
+    function handleUserBatteryUpdate({ userId, level, charging }) {
+      setUserLocations((prev) => ({
+        ...prev,
+        [userId]: {
+          ...(prev[userId] || {}),
+          battery: { level, charging },
+        },
+      }));
+    }
+    socket.on("user-battery-update", handleUserBatteryUpdate);
+    return () => {
+      socket.off("user-battery-update", handleUserBatteryUpdate);
+    };
+  }, [setUserLocations]);
+
+  useEffect(() => {
+    function handleRoomMessage(message) {
+      if (message.type === "warning") {
+        showToast(message.content, "warning");
+      }
+    }
+    socket.on("room-message", handleRoomMessage);
+    return () => socket.off("room-message", handleRoomMessage);
+  }, [socket, showToast]);
+
+
+  // Hazard updates
+  useEffect(() => {
+    const handler = (data) => {
+      const dM = coords
+        ? Math.round(haversine(coords, { lat: data.lat, lng: data.lon }))
+        : null;
+      showToast(
+        `⚠️ ${data.type} reported${dM != null ? ` ${dM}m away` : ""} by ${
+          data.userName
+        }`,
+        "warning"
+      );
+      setHazards((prev) => [
+        ...prev,
+        { ...data, notified: true, distanceM: dM, createdAt: Date.now() },
+      ]);
+    };
+    socket.on("hazard-added", handler);
+    return () => socket.off("hazard-added", handler);
+  }, [socket, coords, showToast]);
+
+  const visibleHazards = useMemo(() => {
+    const now = Date.now();
+    return hazards.filter(
+      (h) => !h.createdAt || now - h.createdAt < 5 * 60 * 1000
+    );
+  }, [hazards]);
+
+  const addHazard = (type, lat, lon) => {
+    const data = {
+      type,
+      lat,
+      lon,
+      userId: user.id,
+      userName: user.name,
+      roomId: roomCode,
+    };
+    socket.emit("add-hazard", data);
+    setHazards((prev) => [...prev, data]);
+  };
+
+  const groupCenter = useMemo(() => {
+    const activeUsers = Object.values(userLocations).filter(
+      (u) => Date.now() - u.lastSeen < INACTIVE_THRESHOLD
+    );
+    if (activeUsers.length === 0) return null;
+    const sum = activeUsers.reduce(
+      (acc, u) => ({
+        lat: acc.lat + u.coords.lat,
+        lng: acc.lng + u.coords.lng,
+      }),
+      { lat: 0, lng: 0 }
+    );
+    return {
+      lat: sum.lat / activeUsers.length,
+      lng: sum.lng / activeUsers.length,
+    };
+  }, [userLocations]);
+
+  const handleSendMessage = useCallback(() => {
+    if (!newMessage.trim()) return;
+    if (!socket.connected) {
+      showToast("Cannot send message - disconnected from server", "danger");
+      return;
+    }
+
+    const message = {
+      type: "chat",
+      content: newMessage.trim(),
+      sender: user?.name.trim(),
+      timestamp: new Date().toISOString(),
+    };
+
+    socket.emit("chat-message", { roomCode, message });
+
+    setMessages((prev) => [...prev, message]);
+    setNewMessage("");
+  }, [newMessage, socket, roomCode, user, showToast]);
+
+// Handle manual recentering via the button
+const handleRecenter = useCallback(() => {
+  if (coords && mapRef.current) {
+    // Smoothly fly to the user's location
+    mapRef.current.flyTo([coords.lat, coords.lng], 16, {
+      duration: 1.5, // Animation duration in seconds
+      easeLinearity: 0.25
+    });
+  }
+}, [coords]);
+
+  const handleLeaveRoom = useCallback(() => {
+    setShowLeaveModal(true);
+  }, []);
+
+  const activeUserCount = useMemo(() => {
+    const now = Date.now();
+    return Object.values(userLocations).filter(
+      (u) => now - u.lastSeen < INACTIVE_THRESHOLD
+    ).length;
+  }, [userLocations]);
+
+  const getUserColor = useCallback(
+    (socketId) => {
+      const index = activeUsers.findIndex((u) => u.socketId === socketId);
+      return COLORS[index % COLORS.length];
+    },
+    [activeUsers]
+  );
+
+  // Check stationary on position update
+  useEffect(() => {
+    if (coords) {
+      checkStationary(coords);
+    }
+  }, [coords, checkStationary]);
+
+  // Loading states
+  if (!isUserReady) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-gray-500 text-lg">Loading user data...</p>
+      </div>
+    );
+  }
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <p className="text-red-500 text-lg">
+          Failed to load user data. Please login again.
+        </p>
+      </div>
+    );
+  }
+  if (locationError) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center max-w-md p-4 bg-red-50 rounded-lg">
+          <p className="text-red-500 text-lg">{locationError}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+  if (!coords) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <p className="text-gray-500 text-lg">Getting your location...</p>
+          <p className="text-sm text-gray-400 mt-2">
+            Please allow location access to continue
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+      <div className="relative h-screen w-screen overflow-hidden">
+        {/* Toast */}
+        <Toast message={toast?.message} type={toast?.type} />
+
+        {/* Stationary Modal */}
+        <StationaryModal
+          isOpen={showStationaryPrompt}
+          onYes={handleStationaryYes}
+          onNo={handleStationaryNo}
+        />
+
+        <div className="flex h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] p-6 gap-6">
+          {/* Map Section */}
+          <div className="w-[80%] h-full">
+            <div className="h-full w-full rounded-2xl shadow-2xl border-2 border-indigo-500/40 overflow-hidden bg-gray-900/40 backdrop-blur-md">
+              {/* Connection Status */}
+              <div className="absolute top-4 left-4 z-[9999] flex items-center">
+                <div
+                  className={`w-3 h-3 rounded-full mr-2 ${
+                    socket.connected ? "bg-green-500" : "bg-red-500"
+                  }`}
+                />
+                <span className="text-sm text-white">
+                  {socket.connected ? "Connected" : "Disconnected"}
+                  {isConnecting && " (Connecting...)"}
+                </span>
+              </div>
+
+              <MapDisplay
+                coords={coords}
+                mapRef={mapRef}
+                userLocations={userLocations}
+                mySocketId={mySocketId}
+                getUserColor={getUserColor}
+                geofence={geofence}
+                groupCenter={groupCenter}
+                visibleHazards={visibleHazards}
+                sourceCoords={sourceCoords}
+                destinationCoords={destinationCoords}
+                user={user}
+                shouldRecenter={shouldRecenter}
+                isRoomCreator={user?.id === currentRoom?.createdBy}
+              />
+
+              {/* SOS Button */}
+              <SOSButton
+                onClick={() => {
+                  playAlertSound();
+                  emitSOS();
+                }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Top Right Buttons */}
+        <div className="absolute top-4 right-4 z-[9999] flex flex-col items-center gap-2">
+          {/* Main Buttons */}
+          <div className="flex items-center gap-3">
+            {/* Recenter */}
+            <button
+              onClick={handleRecenter}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Recenter map"
+            >
+              <IoLocationSharp className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+            </button>
+
+            {/* Chat */}
+            <button
+              onClick={() => setChatOpen(!chatOpen)}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Toggle chat"
+            >
+              <FiMessageSquare className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              {messages.length > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                  {messages.length}
+                </span>
+              )}
+            </button>
+
+            {/* Users */}
+            <button
+              onClick={() => setPanelOpen(!panelOpen)}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-white/30 transition-all duration-300"
+              title="Toggle panel"
+            >
+              <FiUsers className="text-green-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                {activeUserCount}
+              </span>
+            </button>
+
+            {/* Leave Room */}
+            <button
+              onClick={handleLeaveRoom}
+              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-red-500/80 hover:text-white transition-all duration-300"
+              title="Leave room"
+            >
+              <IoExitOutline className="text-red-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+            </button>
+          </div>
+
+          {/* Hazard Buttons */}
+          <div className="flex items-center gap-2 ml-2">
+            <button
+              onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
+              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-red-600 hover:text-white transition-all duration-300"
+              title="Mark Pothole"
+            >
+              <GiRoad className="text-red-500 group-hover:text-white text-xl" />
+              <span className="text-red-500 group-hover:text-white font-semibold text-sm">
+                Pothole
+              </span>
+            </button>
+
+            <button
+              onClick={() => addHazard("Accident", coords.lat, coords.lng)}
+              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
+                 hover:bg-yellow-500 hover:text-white transition-all duration-300"
+              title="Mark Accident"
+            >
+              <MdOutlineWarning className="text-yellow-500 group-hover:text-white text-xl" />
+              <span className="text-yellow-500 group-hover:text-white font-semibold text-sm">
+                Accident
+              </span>
+            </button>
+          </div>
+        </div>
+
+        {/* Users Panel */}
+        <UsersPanel
+          isOpen={panelOpen}
+          onClose={() => setPanelOpen(false)}
+          activeUsers={activeUsers}
+          userLocations={userLocations}
+          mySocketId={mySocketId}
+          getUserColor={getUserColor}
+          geofence={geofence}
+          trailDuration={trailDuration}
+          setTrailDuration={setTrailDuration}
+          geofenceRadius={geofence.radius}
+          setGeofenceRadius={(radius) =>
+            setGeofence((prev) => ({ ...prev, radius }))
+          }
+        />
+
+        {/* Chat Panel */}
+        <ChatPanel
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+          messages={messages}
+          newMessage={newMessage}
+          setNewMessage={setNewMessage}
+          onSend={handleSendMessage}
+          currentUser={user?.name}
+        />
+
+        {/* Leave Room Modal */}
+        <LeaveRoomModal
+          isOpen={showLeaveModal}
+          onCancel={() => setShowLeaveModal(false)}
+          onConfirm={() => {
+            if (socket.connected) {
+              socket.emit("leave-room", { roomCode, userId: user.id });
+              disconnectSocket();
+            }
+            window.location.href = "/";
+          }}
+        />
+      </div>
+    </ErrorBoundary>
+  );
+};
+
+export default RoomMap;
