@@ -34,6 +34,76 @@ const PORT = process.env.PORT || 5000;
 const DEVIATION_THRESHOLD = 100; // Meters, adjust as needed
 const userSocketMap = new Map(); // userId => socket.id
 const roomLocations = {}; // roomCode => { socketId: coords }
+// Stationary detection state
+const lastMoveTimestamp = {}; // roomCode => { socketId: timestamp }
+const stationaryState = {}; // roomCode => { socketId: boolean }
+const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
+  ? parseInt(process.env.STATIONARY_THRESHOLD_MS, 10)
+  : 2* 60 * 1000; // default 5 minutes
+
+console.log(`⏱️ Stationary threshold set to ${Math.round(STATIONARY_THRESHOLD / 1000)}s`);
+
+// Confirmation timeout for asking the user if they're OK (default 30s)
+const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
+  ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
+  : 30 * 1000;
+
+// pending confirmations: roomCode => { socketId: timeoutId }
+const pendingConfirmations = {};
+
+// Periodic checker for stationary users
+setInterval(() => {
+  const now = Date.now();
+  Object.keys(lastMoveTimestamp).forEach((roomCode) => {
+    const timestamps = lastMoveTimestamp[roomCode] || {};
+    Object.keys(timestamps).forEach((socketId) => {
+      const last = timestamps[socketId] || 0;
+      if (now - last >= STATIONARY_THRESHOLD) {
+        if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
+        if (!stationaryState[roomCode][socketId]) {
+          // Ask the user first: emit a confirmation request to the user's socket
+          const sock = io.sockets.sockets.get(socketId);
+          const username = sock?.data?.username || 'Unknown';
+          try {
+            sock?.emit('stationary-confirm', {
+              message: `We've noticed you haven't moved for ${Math.round(STATIONARY_THRESHOLD/60000)} minutes. Are you alright?`,
+              timeout: STATIONARY_CONFIRM_TIMEOUT,
+            });
+          } catch (e) {
+            // if socket not available, fall back to immediate broadcast
+            io.to(roomCode).emit('user-stationary', { socketId, username, since: last });
+            io.to(roomCode).emit('room-message', {
+              from: 'System',
+              type: 'warning',
+              content: `⚠️ ${username} has been stationary for more than ${Math.round(STATIONARY_THRESHOLD/60000)} minutes.`,
+              timestamp: Date.now(),
+            });
+            stationaryState[roomCode][socketId] = true;
+            return;
+          }
+
+          // Set pending confirmation timeout: if no response within timeout, broadcast alert
+          if (!pendingConfirmations[roomCode]) pendingConfirmations[roomCode] = {};
+          if (pendingConfirmations[roomCode][socketId]) clearTimeout(pendingConfirmations[roomCode][socketId]);
+          pendingConfirmations[roomCode][socketId] = setTimeout(() => {
+            // If still not stationary-marked, broadcast alert
+            if (!stationaryState[roomCode][socketId]) {
+              stationaryState[roomCode][socketId] = true;
+              io.to(roomCode).emit('user-stationary', { socketId, username, since: last });
+              io.to(roomCode).emit('room-message', {
+                from: 'System',
+                type: 'warning',
+                content: `⚠️ ${username} has been stationary for more than ${Math.round(STATIONARY_THRESHOLD/60000)} minutes.`,
+                timestamp: Date.now(),
+              });
+            }
+            delete pendingConfirmations[roomCode][socketId];
+          }, STATIONARY_CONFIRM_TIMEOUT);
+        }
+      }
+    });
+  });
+}, 30 * 1000); // run every 30s
 
 io.on("connection", (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
@@ -85,6 +155,45 @@ const lastDeviationAlert = new Map(); // socket.id => timestamp
     // Store user location
     if (!roomLocations[roomCode]) roomLocations[roomCode] = {};
     roomLocations[roomCode][socket.id] = coords;
+    // Update last move timestamp for this user
+    if (!lastMoveTimestamp[roomCode]) lastMoveTimestamp[roomCode] = {};
+    if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
+
+    const now = Date.now();
+    const prev = lastMoveTimestamp[roomCode][socket.id] || 0;
+
+    // If coords contain a timestamp or speed, you can use that; otherwise use distance-based movement
+    const moved = (() => {
+      const prevLoc = (roomLocations[roomCode] || {})[socket.id + "__prev"];
+      if (!prevLoc) return true; // first report treat as moved
+      try {
+        const d = haversine(prevLoc, coords);
+        return d > 5; // moved more than 5 meters
+      } catch (e) {
+        return true;
+      }
+    })();
+
+    // store a shallow copy as previous for next comparison
+    roomLocations[roomCode][socket.id + "__prev"] = coords;
+
+    if (moved) {
+      lastMoveTimestamp[roomCode][socket.id] = now;
+      // If previously stationary, clear state and inform room
+      if (stationaryState[roomCode][socket.id]) {
+        stationaryState[roomCode][socket.id] = false;
+        io.to(roomCode).emit("user-stationary-cleared", {
+          socketId: socket.id,
+          username: socket.data.username,
+        });
+        io.to(roomCode).emit("room-message", {
+          from: "System",
+          type: "info",
+          content: `${socket.data.username} is moving again. Stationary cleared.`,
+          timestamp: Date.now(),
+        });
+      }
+    }
 
     // Broadcast location update
     io.to(roomCode).emit("location-update", {
@@ -183,6 +292,42 @@ if (isCreator) {
 
   });
 
+  // Handle user's response to stationary confirmation
+  socket.on('stationary-response', ({ roomCode, response }) => {
+    if (!roomCode || !socket.data.username) return;
+    const roomPending = pendingConfirmations[roomCode] || {};
+    const timeoutId = roomPending[socket.id];
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      delete roomPending[socket.id];
+    }
+
+    if (response === 'yes') {
+      // User confirms they're OK: reset lastMoveTimestamp to now to avoid re-asking
+      if (!lastMoveTimestamp[roomCode]) lastMoveTimestamp[roomCode] = {};
+      lastMoveTimestamp[roomCode][socket.id] = Date.now();
+      // Make sure stationary state remains false
+      if (stationaryState[roomCode]) stationaryState[roomCode][socket.id] = false;
+      io.to(roomCode).emit('room-message', {
+        from: 'System',
+        type: 'info',
+        content: `${socket.data.username} confirmed they are OK.`,
+        timestamp: Date.now(),
+      });
+    } else {
+      // 'no' or any negative response: broadcast SOS-like alert to room
+      if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
+      stationaryState[roomCode][socket.id] = true;
+      io.to(roomCode).emit('user-stationary', { socketId: socket.id, username: socket.data.username, since: Date.now() });
+      io.to(roomCode).emit('room-message', {
+        from: 'System',
+        type: 'warning',
+        content: `🚨 ${socket.data.username} indicated they need help!`,
+        timestamp: Date.now(),
+      });
+    }
+  });
+
 socket.on("chat-message", ({ roomCode, message }) => {
   if (!roomCode || !message || !socket.data.username) {
     console.warn("⚠️ chat-message failed:", { roomCode, message, user: socket.data });
@@ -265,6 +410,21 @@ socket.on("add-hazard", (data) => {
         delete roomLocations[roomCode][socket.id];
         if (Object.keys(roomLocations[roomCode]).length === 0) {
           delete roomLocations[roomCode];
+        }
+      }
+
+      // Cleanup stationary state and lastMoveTimestamp
+      if (lastMoveTimestamp[roomCode]) {
+        delete lastMoveTimestamp[roomCode][socket.id];
+        if (Object.keys(lastMoveTimestamp[roomCode]).length === 0) {
+          delete lastMoveTimestamp[roomCode];
+        }
+      }
+
+      if (stationaryState[roomCode]) {
+        delete stationaryState[roomCode][socket.id];
+        if (Object.keys(stationaryState[roomCode]).length === 0) {
+          delete stationaryState[roomCode];
         }
       }
 

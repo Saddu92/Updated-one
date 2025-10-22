@@ -53,6 +53,13 @@ export const useRoomSocket = ({
         ...prev.filter((u) => u.socketId !== socketId),
         { socketId, username },
       ]);
+      // expose global socket for hooks that need to emit outside closure
+      try {
+        window.__syncFleetSocket = socket;
+        window.__syncFleetRoomCode = roomCode;
+      } catch (e) {
+        // ignore (SSR or non-browser)
+      }
       showToast(`${username} joined the room`, "info");
       if (onUserJoined) onUserJoined({ username, socketId });
     };
@@ -164,6 +171,35 @@ export const useRoomSocket = ({
       if (onRoomUsers) onRoomUsers(users);
     };
 
+    const handleUserStationary = ({ socketId, username, since }) => {
+      // Mark user as stationary in local state
+      setUserLocations((prev) => ({
+        ...prev,
+        [socketId]: {
+          ...(prev[socketId] || {}),
+          isStationary: true,
+          stationarySince: since || Date.now(),
+        },
+      }));
+
+      // Notify UI
+      if (playAlertSound) playAlertSound();
+      if (showToast) showToast(`${username} has been stationary`, "warning");
+    };
+
+    const handleUserStationaryCleared = ({ socketId, username }) => {
+      setUserLocations((prev) => ({
+        ...prev,
+        [socketId]: {
+          ...(prev[socketId] || {}),
+          isStationary: false,
+          stationarySince: null,
+        },
+      }));
+
+      if (showToast) showToast(`${username} is moving again`, "info");
+    };
+
     if (!socket.connected) {
       setIsConnecting(true);
       socket.connect();
@@ -175,6 +211,16 @@ export const useRoomSocket = ({
     socket.on("user-left", handleUserLeft);
     socket.on("location-update", handleLocationUpdate);
     socket.on("anomaly-alert", handleAnomalyAlert);
+    socket.on("user-stationary", handleUserStationary);
+    // When server asks this client to confirm stationary status, dispatch a global event
+    socket.on('stationary-confirm', (data) => {
+      try {
+        window.dispatchEvent(new CustomEvent('syncfleet:stationary-confirm', { detail: data }));
+      } catch (e) {
+        // ignore if not in browser
+      }
+    });
+  socket.on("user-stationary-cleared", handleUserStationaryCleared);
     socket.on("room-message", handleRoomMessage);
     socket.on("room-users", handleRoomUsers);
 
@@ -260,6 +306,8 @@ socket.on("user-sos", ({ socketId, username }) => {
       socket.off("user-left", handleUserLeft);
       socket.off("location-update", handleLocationUpdate);
       socket.off("anomaly-alert", handleAnomalyAlert);
+      socket.off("user-stationary", handleUserStationary);
+      socket.off("user-stationary-cleared", handleUserStationaryCleared);
       socket.off("room-message", handleRoomMessage);
       socket.off("room-users", handleRoomUsers);
       clearInterval(stationaryCheckIntervalRef.current);

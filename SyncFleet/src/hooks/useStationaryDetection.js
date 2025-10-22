@@ -59,6 +59,29 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
     [emitSOS, mySocketId, showStationaryPrompt, setUserLocations]
   );
 
+    // Programmatically trigger the stationary prompt (used when server asks)
+    const triggerStationaryPrompt = useCallback((message, timeout = 30000) => {
+      setShowStationaryPrompt(true);
+      clearTimeout(stationaryPromptTimeout.current);
+      stationaryPromptTimeout.current = setTimeout(() => {
+        setShowStationaryPrompt(false);
+        // Auto 'no' (need help) on timeout
+        setUserLocations((prev) => ({
+          ...prev,
+          [mySocketId]: {
+            ...(prev[mySocketId] || {}),
+            isStationary: true,
+            isSOS: true,
+          },
+        }));
+        emitSOS();
+        try {
+          const socket = window.__syncFleetSocket;
+          socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'no' });
+        } catch (e) {}
+      }, timeout);
+    }, [emitSOS, mySocketId, setUserLocations]);
+
   const handleStationaryYes = useCallback(() => {
     setShowStationaryPrompt(false);
     clearTimeout(stationaryPromptTimeout.current);
@@ -73,6 +96,13 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
         isSOS: false,
       },
     }));
+    // Notify server that user is OK
+    try {
+      const socket = window.__syncFleetSocket; // global socket reference (set in app's socket init)
+      socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'yes' });
+    } catch (e) {
+      // ignore
+    }
   }, [mySocketId, setUserLocations]);
 
   const handleStationaryNo = useCallback(() => {
@@ -91,6 +121,13 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
     
     // Send SOS immediately
     emitSOS();
+    // Notify server that user needs help
+    try {
+      const socket = window.__syncFleetSocket;
+      socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'no' });
+    } catch (e) {
+      // ignore
+    }
   }, [emitSOS, mySocketId, setUserLocations]);
 
   return {
@@ -98,5 +135,6 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
     showStationaryPrompt,
     handleStationaryYes,
     handleStationaryNo,
+    triggerStationaryPrompt,
   };
 };

@@ -281,11 +281,26 @@ const emitSOS = useCallback(() => {
     showStationaryPrompt,
     handleStationaryYes,
     handleStationaryNo,
+    triggerStationaryPrompt,
   } = useStationaryDetection({
     mySocketId,
     setUserLocations,
     emitSOS,
   });
+
+  // Listen for server-initiated stationary confirmations
+  useEffect(() => {
+    function onServerAsk(e) {
+      const data = e.detail || {};
+      const timeout = data.timeout || 30000;
+      // trigger the modal prompt programmatically
+      if (typeof window !== 'undefined' && triggerStationaryPrompt) {
+        triggerStationaryPrompt(data.message || 'Are you alright?', timeout);
+      }
+    }
+    window.addEventListener('syncfleet:stationary-confirm', onServerAsk);
+    return () => window.removeEventListener('syncfleet:stationary-confirm', onServerAsk);
+  }, []);
 
 
 
