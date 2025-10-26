@@ -27,10 +27,12 @@ const MapDisplay = ({
   user,
   shouldRecenter,
   isRoomCreator,
+  creatorSocketId, // ✅ NEW
 }) => {
   const calculateDeviation = (userCoords) => {
-    if (!groupCenter || !userCoords) return 0;
-    return haversine(groupCenter, userCoords);
+    // ✅ Calculate deviation from geofence center (creator's position)
+    if (!geofence.center || !userCoords) return 0;
+    return haversine(geofence.center, userCoords);
   };
 
   return (
@@ -51,8 +53,10 @@ const MapDisplay = ({
         <RoutePath source={sourceCoords} destination={destinationCoords} />
       )}
 
-      {/* Geofence */}
-      <GeofenceCircle center={geofence.center} radius={geofence.radius} />
+      {/* Geofence - Show if center exists */}
+      {geofence.center && (
+        <GeofenceCircle center={geofence.center} radius={geofence.radius} />
+      )}
 
       {/* Hazards */}
       <HazardLayer hazards={visibleHazards} />
@@ -62,19 +66,19 @@ const MapDisplay = ({
 
       {/* Current User Marker */}
       <UserMarker
-        username="You"
+        username={isRoomCreator ? "You (Creator)" : "You"}
         coords={coords}
         color={
           userLocations[mySocketId]?.isStationary
             ? "#ef4444"
-            : isOutsideGeofence(coords, geofence)
+            : isOutsideGeofence(coords, geofence) && !isRoomCreator
             ? "#f59e0b"
             : getUserColor(mySocketId)
         }
         markerType={
           userLocations[mySocketId]?.isStationary
             ? "stationary"
-            : isOutsideGeofence(coords, geofence)
+            : isOutsideGeofence(coords, geofence) && !isRoomCreator
             ? "outside"
             : "normal"
         }
@@ -90,24 +94,26 @@ const MapDisplay = ({
           const isActive = now - u.lastSeen < INACTIVE_THRESHOLD;
           if (!isActive) return null;
 
+          // ✅ Check if this user is outside geofence
           const outside = isOutsideGeofence(u.coords, geofence);
           const deviationDistance = calculateDeviation(u.coords);
+          const isCreator = id === creatorSocketId;
 
           let markerType = null;
           if (u.isStationary) markerType = "stationary";
-        
-          
-          else if (deviationDistance > DEVIATION_THRESHOLD) markerType = "far";
-          else if (outside) markerType = "outside";
+          else if (u.isSOS) markerType = "sos";
+          // ✅ Only non-creators can be "outside" or "far"
+          else if (!isCreator && outside) markerType = "outside";
+          else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD) markerType = "far";
           else markerType = "normal";
 
           return (
             <React.Fragment key={id}>
               <UserMarker
-                username={u.username}
+                username={isCreator ? `${u.username} (Creator)` : u.username}
                 coords={u.coords}
                 color={getUserColor(id)}
-                markerType={u.isSOS?"sos":markerType}
+                markerType={u.isSOS ? "sos" : markerType}
                 deviationDistance={deviationDistance}
                 batteryLevel={u.battery?.level}
               />
@@ -139,13 +145,6 @@ const MapDisplay = ({
             </React.Fragment>
           );
         })}
-
-      {/* Group Center */}
-      {groupCenter && (
-        <Marker position={groupCenter} icon={createGroupCenterIcon()}>
-          <Popup>Group Center</Popup>
-        </Marker>
-      )}
     </MapContainer>
   );
 };
@@ -168,6 +167,9 @@ MapDisplay.propTypes = {
   sourceCoords: PropTypes.object,
   destinationCoords: PropTypes.object,
   user: PropTypes.object,
+  shouldRecenter: PropTypes.bool,
+  isRoomCreator: PropTypes.bool,
+  creatorSocketId: PropTypes.string, // ✅ NEW
 };
 
 export default MapDisplay;

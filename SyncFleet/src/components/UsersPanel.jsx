@@ -2,6 +2,7 @@
 import React from "react";
 import PropTypes from "prop-types";
 import { isOutsideGeofence } from "../utils/helper.js";
+import haversine from "haversine-distance";
 
 const UsersPanel = ({
   isOpen,
@@ -15,6 +16,7 @@ const UsersPanel = ({
   setTrailDuration,
   geofenceRadius,
   setGeofenceRadius,
+  creatorSocketId, // ✅ NEW
 }) => {
   if (!isOpen) return null;
 
@@ -37,15 +39,16 @@ const UsersPanel = ({
           const location = userLocations[user.socketId] || {};
           const batteryLevel = location.battery?.level ?? null;
           const outside = isOutsideGeofence(location?.coords, geofence);
+          const isCreator = user.socketId === creatorSocketId;
 
           return (
             <div
               key={user.socketId}
               className={`flex items-center justify-between p-2 hover:bg-gray-800 rounded transition ${
                 location.isStationary ? "bg-red-900/30" : ""
-              }`}
+              } ${isCreator ? "bg-yellow-900/20" : ""}`}
             >
-              <div className="flex items-center gap-2 truncate">
+              <div className="flex items-center gap-2 truncate flex-1">
                 <div
                   className="w-3 h-3 rounded-full"
                   style={{
@@ -54,10 +57,28 @@ const UsersPanel = ({
                       : getUserColor(user.socketId),
                   }}
                 />
-                <span className="truncate text-sm font-medium text-white">
-                  {user.username}
-                  {user.socketId === mySocketId && " (You)"}
-                </span>
+                <div className="flex flex-col truncate">
+                  <div className="flex items-center gap-2">
+                    <span className="truncate text-sm font-medium text-white">
+                      {user.username}
+                      {user.socketId === mySocketId && " (You)"}
+                    </span>
+                    {/* ✅ Creator Badge */}
+                    {isCreator && (
+                      <span className="bg-yellow-500 text-black text-xs px-2 py-0.5 rounded-full font-bold">
+                        👑 Leader
+                      </span>
+                    )}
+                  </div>
+                  {/* ✅ Show distance from creator for non-creators */}
+                  {!isCreator && geofence.center && location.coords && (
+                    <span className="text-xs text-gray-400">
+                      {Math.round(
+                        haversine(location.coords, geofence.center)
+                      )}m from leader
+                    </span>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-1 text-xs">
@@ -78,14 +99,14 @@ const UsersPanel = ({
                   </span>
                 )}
 
-                {/* Outside geofence */}
-                {outside && (
-                  <span className="text-orange-400 font-semibold">OUTSIDE!</span>
+                {/* Outside geofence - only for non-creators */}
+                {!isCreator && outside && (
+                  <span className="text-orange-400 font-semibold">⚠️ FAR</span>
                 )}
 
                 {/* SOS */}
                 {location.isStationary && (
-                  <span className="text-red-500 font-bold">SOS</span>
+                  <span className="text-red-500 font-bold">🚨 SOS</span>
                 )}
               </div>
             </div>
@@ -112,7 +133,7 @@ const UsersPanel = ({
       {/* Geofence Radius */}
       <div className="p-2 border-t border-gray-700">
         <label className="text-xs text-gray-400 mb-1 block">
-          Geofence Radius (meters)
+          Geofence Radius (meters) - Leader's Area
         </label>
         <input
           type="number"
@@ -123,6 +144,9 @@ const UsersPanel = ({
           onChange={(e) => setGeofenceRadius(Number(e.target.value))}
           className="w-full p-1 border border-gray-600 rounded text-xs bg-gray-800 text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
         />
+        <p className="text-xs text-gray-500 mt-1">
+          All members should stay within this distance from the leader
+        </p>
       </div>
     </div>
   );
@@ -148,6 +172,7 @@ UsersPanel.propTypes = {
   setTrailDuration: PropTypes.func.isRequired,
   geofenceRadius: PropTypes.number.isRequired,
   setGeofenceRadius: PropTypes.func.isRequired,
+  creatorSocketId: PropTypes.string,
 };
 
 export default UsersPanel;

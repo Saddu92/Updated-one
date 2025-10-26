@@ -144,6 +144,8 @@ const RoomMap = ({ room }) => {
   const [shouldRecenter, setShouldRecenter] = useState(false);
   const [isRoomCreator, setIsRoomCreator] = useState(false);
   const [roomCreatorId, setRoomCreatorId] = useState(null);
+  const [creatorSocketId, setCreatorSocketId] = useState(null); // ✅ NEW
+  const [creatorCoords, setCreatorCoords] = useState(null); // ✅ NEW
 
   // Refs
   const mapRef = useRef();
@@ -160,10 +162,6 @@ const RoomMap = ({ room }) => {
     setToast({ message, type });
     toastTimeoutRef.current = setTimeout(() => setToast(null), 5000);
   }, []);
-
-  
-
-
 
   // Custom hooks
   const { coords, locationError } = useGeoWatcher({
@@ -197,6 +195,7 @@ const RoomMap = ({ room }) => {
     userLocations,
     alertUsers,
     userTrails,
+    creatorSocketId: hookCreatorSocketId, // ✅ GET FROM HOOK
     setUserLocations,
     setAlertUsers,
   } = useRoomSocket({
@@ -234,47 +233,55 @@ const RoomMap = ({ room }) => {
         },
       ]);
     },
-  });
-  // SOS emitter
-const emitSOS = useCallback(() => {
-  if (!socket.connected) {
-    showToast("Cannot send SOS - disconnected from server", "danger");
-    return;
-  }
-
-  // Play alert sound once
-  playAlertSound();
-
-  // Emit single SOS event
-  const message = {
-    type: "sos",
-    content: `🚨 SOS Alert from ${user?.name}`,
-    sender: user?.name || "You",
-    timestamp: new Date().toISOString(),
-  };
-  socket.emit("chat-message", { roomCode, message });
-
-  // Update local user status
-  setUserLocations((prev) => ({
-    ...prev,
-    [mySocketId]: {
-      ...prev[mySocketId],
-      isSOS: true,
-      sosStartTime: Date.now()
+    onCreatorIdentified: (socketId) => { // ✅ NEW CALLBACK
+      setCreatorSocketId(socketId);
+      console.log(`👑 Creator identified: ${socketId}`);
     },
-  }));
+  });
 
-  // Reset after SOS_DURATION
-  setTimeout(() => {
+  // Sync creator socket ID from hook
+  useEffect(() => {
+    if (hookCreatorSocketId && hookCreatorSocketId !== creatorSocketId) {
+      setCreatorSocketId(hookCreatorSocketId);
+    }
+  }, [hookCreatorSocketId, creatorSocketId]);
+
+  // SOS emitter
+  const emitSOS = useCallback(() => {
+    if (!socket.connected) {
+      showToast("Cannot send SOS - disconnected from server", "danger");
+      return;
+    }
+
+    playAlertSound();
+
+    const message = {
+      type: "sos",
+      content: `🚨 SOS Alert from ${user?.name}`,
+      sender: user?.name || "You",
+      timestamp: new Date().toISOString(),
+    };
+    socket.emit("chat-message", { roomCode, message });
+
     setUserLocations((prev) => ({
       ...prev,
       [mySocketId]: {
         ...prev[mySocketId],
-        isSOS: false
+        isSOS: true,
+        sosStartTime: Date.now()
       },
     }));
-  }, SOS_DURATION);
-}, [socket, roomCode, user, showToast, mySocketId, playAlertSound]);
+
+    setTimeout(() => {
+      setUserLocations((prev) => ({
+        ...prev,
+        [mySocketId]: {
+          ...prev[mySocketId],
+          isSOS: false
+        },
+      }));
+    }, SOS_DURATION);
+  }, [socket, roomCode, user, showToast, mySocketId, playAlertSound, setUserLocations]);
 
   const {
     checkStationary,
@@ -293,16 +300,13 @@ const emitSOS = useCallback(() => {
     function onServerAsk(e) {
       const data = e.detail || {};
       const timeout = data.timeout || 30000;
-      // trigger the modal prompt programmatically
       if (typeof window !== 'undefined' && triggerStationaryPrompt) {
         triggerStationaryPrompt(data.message || 'Are you alright?', timeout);
       }
     }
     window.addEventListener('syncfleet:stationary-confirm', onServerAsk);
     return () => window.removeEventListener('syncfleet:stationary-confirm', onServerAsk);
-  }, []);
-
-
+  }, [triggerStationaryPrompt]);
 
   // Load user and check room creator
   const { user: authUser } = useAuthStore();
@@ -321,6 +325,9 @@ const emitSOS = useCallback(() => {
         setCurrentRoom(roomData);
         const isCreator = roomData?.createdBy === authUser.id;
         setIsRoomCreator(isCreator);
+        setRoomCreatorId(roomData?.createdBy);
+        
+        console.log(`🔑 User ${authUser.name} is ${isCreator ? 'CREATOR' : 'MEMBER'} of room ${roomCode}`);
       } catch (e) {
         console.error("Error loading room:", e);
         if (e.response?.status === 401) {
@@ -348,25 +355,35 @@ const emitSOS = useCallback(() => {
     fetchRoom();
   }, [roomCode]); 
 
-  // Set geofence center
+  // Set geofence center - creator-based
   useEffect(() => {
-    if (coords && !geofence.center) {
+    if (isRoomCreator) {
+      // Creator uses their own position
+      if (coords) {
+        setGeofence((prev) => ({
+          ...prev,
+          center: coords,
+          radius: prev.radius || 300,
+        }));
+      }
+    } else if (creatorSocketId && userLocations[creatorSocketId]?.coords) {
+      // Members use creator's position
+      const newCreatorCoords = userLocations[creatorSocketId].coords;
       setGeofence((prev) => ({
         ...prev,
-        center: coords,
-        radius: 300,
+        center: newCreatorCoords,
       }));
+      setCreatorCoords(newCreatorCoords);
     }
-  }, [coords, geofence.center]);
+  }, [coords, isRoomCreator, creatorSocketId, userLocations]);
 
   // Set recenter only on initial mount
-useEffect(() => {
+  useEffect(() => {
     setShouldRecenter(true);
-    // Turn off automatic recentering after initial mount
     setTimeout(() => {
-        setShouldRecenter(false);
+      setShouldRecenter(false);
     }, 1000);
-}, []); // Only on initial mount
+  }, []);
 
   // Battery monitoring
   useEffect(() => {
@@ -435,7 +452,6 @@ useEffect(() => {
     return () => socket.off("room-message", handleRoomMessage);
   }, [socket, showToast]);
 
-
   // Hazard updates
   useEffect(() => {
     const handler = (data) => {
@@ -478,11 +494,11 @@ useEffect(() => {
   };
 
   const groupCenter = useMemo(() => {
-    const activeUsers = Object.values(userLocations).filter(
+    const activeUsersList = Object.values(userLocations).filter(
       (u) => Date.now() - u.lastSeen < INACTIVE_THRESHOLD
     );
-    if (activeUsers.length === 0) return null;
-    const sum = activeUsers.reduce(
+    if (activeUsersList.length === 0) return null;
+    const sum = activeUsersList.reduce(
       (acc, u) => ({
         lat: acc.lat + u.coords.lat,
         lng: acc.lng + u.coords.lng,
@@ -490,8 +506,8 @@ useEffect(() => {
       { lat: 0, lng: 0 }
     );
     return {
-      lat: sum.lat / activeUsers.length,
-      lng: sum.lng / activeUsers.length,
+      lat: sum.lat / activeUsersList.length,
+      lng: sum.lng / activeUsersList.length,
     };
   }, [userLocations]);
 
@@ -515,16 +531,15 @@ useEffect(() => {
     setNewMessage("");
   }, [newMessage, socket, roomCode, user, showToast]);
 
-// Handle manual recentering via the button
-const handleRecenter = useCallback(() => {
-  if (coords && mapRef.current) {
-    // Smoothly fly to the user's location
-    mapRef.current.flyTo([coords.lat, coords.lng], 16, {
-      duration: 1.5, // Animation duration in seconds
-      easeLinearity: 0.25
-    });
-  }
-}, [coords]);
+  // Handle manual recentering via the button
+  const handleRecenter = useCallback(() => {
+    if (coords && mapRef.current) {
+      mapRef.current.flyTo([coords.lat, coords.lng], 16, {
+        duration: 1.5,
+        easeLinearity: 0.25
+      });
+    }
+  }, [coords]);
 
   const handleLeaveRoom = useCallback(() => {
     setShowLeaveModal(true);
@@ -634,13 +649,14 @@ const handleRecenter = useCallback(() => {
                 mySocketId={mySocketId}
                 getUserColor={getUserColor}
                 geofence={geofence}
-                groupCenter={groupCenter}
+                groupCenter={null}
                 visibleHazards={visibleHazards}
                 sourceCoords={sourceCoords}
                 destinationCoords={destinationCoords}
                 user={user}
                 shouldRecenter={shouldRecenter}
-                isRoomCreator={user?.id === currentRoom?.createdBy}
+                isRoomCreator={isRoomCreator}
+                creatorSocketId={creatorSocketId}
               />
 
               {/* SOS Button */}
@@ -750,6 +766,7 @@ const handleRecenter = useCallback(() => {
           setGeofenceRadius={(radius) =>
             setGeofence((prev) => ({ ...prev, radius }))
           }
+          creatorSocketId={creatorSocketId}
         />
 
         {/* Chat Panel */}

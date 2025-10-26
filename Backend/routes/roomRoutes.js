@@ -1,5 +1,5 @@
 import {Router} from  "express";
-import { protect } from "../middlewares/authmiddelware.js";
+import { protect } from "../middlewares/authMiddelware.js";
 import { createRoom, getMyRooms, joinRoom,getRoomByCode} from "../controllers/roomController.js";
 
 const roomRoutes=Router();

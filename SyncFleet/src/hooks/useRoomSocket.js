@@ -16,6 +16,7 @@ export const useRoomSocket = ({
   onUserLeft,
   onRoomMessage,
   onRoomUsers,
+  onCreatorIdentified, // ✅ NEW
 }) => {
   const [mySocketId, setMySocketId] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -23,6 +24,7 @@ export const useRoomSocket = ({
   const [userLocations, setUserLocations] = useState({});
   const [alertUsers, setAlertUsers] = useState(new Set());
   const [userTrails, setUserTrails] = useState({});
+  const [creatorSocketId, setCreatorSocketId] = useState(null); // ✅ NEW
 
   const stationaryCheckIntervalRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
@@ -48,20 +50,29 @@ export const useRoomSocket = ({
       showToast("Disconnected from server", "danger");
     };
 
-    const handleUserJoined = ({ username, socketId }) => {
+    const handleUserJoined = ({ username, socketId, isCreator }) => {
       setActiveUsers((prev) => [
         ...prev.filter((u) => u.socketId !== socketId),
-        { socketId, username },
+        { socketId, username, isCreator }, // ✅ Include isCreator
       ]);
-      // expose global socket for hooks that need to emit outside closure
+
+      // ✅ Track creator socket ID
+      if (isCreator) {
+        setCreatorSocketId(socketId);
+        if (onCreatorIdentified) {
+          onCreatorIdentified(socketId);
+        }
+        console.log(`👑 Creator identified: ${username} (${socketId})`);
+      }
+
       try {
         window.__syncFleetSocket = socket;
         window.__syncFleetRoomCode = roomCode;
       } catch (e) {
-        // ignore (SSR or non-browser)
+        // ignore
       }
-      showToast(`${username} joined the room`, "info");
-      if (onUserJoined) onUserJoined({ username, socketId });
+      showToast(`${username} joined the room${isCreator ? ' (Creator)' : ''}`, "info");
+      if (onUserJoined) onUserJoined({ username, socketId, isCreator });
     };
 
     const handleUserLeft = ({ socketId }) => {
@@ -83,7 +94,7 @@ export const useRoomSocket = ({
       if (onUserLeft) onUserLeft({ socketId });
     };
 
-    const handleLocationUpdate = ({ socketId, username, coords }) => {
+    const handleLocationUpdate = ({ socketId, username, coords, isCreator }) => {
       const now = Date.now();
       setUserLocations((prev) => {
         const existing = prev[socketId] || {};
@@ -93,24 +104,37 @@ export const useRoomSocket = ({
         ]
           .filter((p) => now - p.timestamp <= trailExpiryMs)
           .slice(-PATH_HISTORY_LIMIT);
+        
         return {
           ...prev,
           [socketId]: {
             ...existing,
             username,
             coords,
+            isCreator: isCreator || false, // ✅ Store creator flag
             lastSeen: now,
             path: filteredPath,
           },
         };
       });
+
+      // ✅ Update creator socket ID if this is creator
+      if (isCreator && !creatorSocketId) {
+        setCreatorSocketId(socketId);
+        if (onCreatorIdentified) {
+          onCreatorIdentified(socketId);
+        }
+        console.log(`👑 Creator position updated: ${username}`);
+      }
+
       setUserTrails((prev) => ({
         ...prev,
         [socketId]: [...(prev[socketId] || []), { ...coords, timestamp: now }]
           .filter((p) => now - p.timestamp <= trailExpiryMs)
           .slice(-PATH_HISTORY_LIMIT),
       }));
-      if (onLocationUpdate) onLocationUpdate({ socketId, username, coords });
+      
+      if (onLocationUpdate) onLocationUpdate({ socketId, username, coords, isCreator });
     };
 
     const handleAnomalyAlert = (data) => {
@@ -168,11 +192,21 @@ export const useRoomSocket = ({
 
     const handleRoomUsers = (users) => {
       setActiveUsers(users);
+      
+      // ✅ Find and set creator from user list
+      const creator = users.find(u => u.isCreator);
+      if (creator && creator.socketId !== creatorSocketId) {
+        setCreatorSocketId(creator.socketId);
+        if (onCreatorIdentified) {
+          onCreatorIdentified(creator.socketId);
+        }
+        console.log(`👑 Creator found in user list: ${creator.username}`);
+      }
+      
       if (onRoomUsers) onRoomUsers(users);
     };
 
     const handleUserStationary = ({ socketId, username, since }) => {
-      // Mark user as stationary in local state
       setUserLocations((prev) => ({
         ...prev,
         [socketId]: {
@@ -182,7 +216,6 @@ export const useRoomSocket = ({
         },
       }));
 
-      // Notify UI
       if (playAlertSound) playAlertSound();
       if (showToast) showToast(`${username} has been stationary`, "warning");
     };
@@ -200,6 +233,25 @@ export const useRoomSocket = ({
       if (showToast) showToast(`${username} is moving again`, "info");
     };
 
+    const handleUserSOS = ({ socketId, username }) => {
+      setUserLocations((prev) => ({
+        ...prev,
+        [socketId]: {
+          ...(prev[socketId] || {}),
+          isStationary: true,
+          isSOS: true,
+        },
+      }));
+      
+      if (playAlertSound) {
+        playAlertSound();
+      }
+      
+      if (showToast) {
+        showToast(`🚨 SOS Alert from ${username}!`, "danger");
+      }
+    };
+
     if (!socket.connected) {
       setIsConnecting(true);
       socket.connect();
@@ -212,76 +264,18 @@ export const useRoomSocket = ({
     socket.on("location-update", handleLocationUpdate);
     socket.on("anomaly-alert", handleAnomalyAlert);
     socket.on("user-stationary", handleUserStationary);
-    // When server asks this client to confirm stationary status, dispatch a global event
     socket.on('stationary-confirm', (data) => {
       try {
         window.dispatchEvent(new CustomEvent('syncfleet:stationary-confirm', { detail: data }));
       } catch (e) {
-        // ignore if not in browser
+        // ignore
       }
     });
-  socket.on("user-stationary-cleared", handleUserStationaryCleared);
+    socket.on("user-stationary-cleared", handleUserStationaryCleared);
+    socket.on("user-sos", handleUserSOS);
     socket.on("room-message", handleRoomMessage);
     socket.on("room-users", handleRoomUsers);
 
-    // hooks/useRoomSocket.js - Key additions
-
-// Add to the location-update handler
-socket.on("location-update", ({ socketId, username, coords, isCreator }) => {
-  setUserLocations((prev) => {
-    const existing = prev[socketId] || {};
-    const now = Date.now();
-    
-    // Build path history
-    const newPath = [...(existing.path || []), coords];
-    const cutoffTime = now - trailExpiryMs;
-    const filteredPath = newPath.filter((_, idx) => {
-      const timestamp = existing.pathTimestamps?.[idx] || now;
-      return timestamp > cutoffTime;
-    });
-
-    return {
-      ...prev,
-      [socketId]: {
-        ...existing,
-        username,
-        coords,
-        isCreator: isCreator || false,
-        userId: existing.userId, // Preserve userId
-        lastSeen: now,
-        path: filteredPath.slice(-PATH_HISTORY_LIMIT),
-        pathTimestamps: [
-          ...(existing.pathTimestamps || []),
-          now,
-        ].slice(-PATH_HISTORY_LIMIT),
-        // Preserve stationary and SOS status
-        isStationary: existing.isStationary || false,
-        isSOS: existing.isSOS || false,
-        battery: existing.battery, // Preserve battery info
-      },
-    };
-  });
-});
-
-// Add handler for SOS events
-socket.on("user-sos", ({ socketId, username }) => {
-  setUserLocations((prev) => ({
-    ...prev,
-    [socketId]: {
-      ...(prev[socketId] || {}),
-      isStationary: true,
-      isSOS: true,
-    },
-  }));
-  
-  if (playAlertSound) {
-    playAlertSound();
-  }
-  
-  if (showToast) {
-    showToast(`🚨 SOS Alert from ${username}!`, "danger");
-  }
-});
     stationaryCheckIntervalRef.current = setInterval(() => {
       setUserLocations((prev) => {
         const now = Date.now();
@@ -308,6 +302,7 @@ socket.on("user-sos", ({ socketId, username }) => {
       socket.off("anomaly-alert", handleAnomalyAlert);
       socket.off("user-stationary", handleUserStationary);
       socket.off("user-stationary-cleared", handleUserStationaryCleared);
+      socket.off("user-sos", handleUserSOS);
       socket.off("room-message", handleRoomMessage);
       socket.off("room-users", handleRoomUsers);
       clearInterval(stationaryCheckIntervalRef.current);
@@ -326,6 +321,8 @@ socket.on("user-sos", ({ socketId, username }) => {
     onUserLeft,
     onRoomMessage,
     onRoomUsers,
+    onCreatorIdentified,
+    creatorSocketId,
   ]);
 
   return {
@@ -335,6 +332,7 @@ socket.on("user-sos", ({ socketId, username }) => {
     userLocations,
     alertUsers,
     userTrails,
+    creatorSocketId, // ✅ Export creator socket ID
     setUserLocations,
     setAlertUsers,
   };

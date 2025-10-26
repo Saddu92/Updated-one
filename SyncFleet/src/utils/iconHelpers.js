@@ -1,3 +1,4 @@
+
 // utils/iconHelpers.js
 import L from "leaflet";
 
@@ -28,10 +29,21 @@ export const createPulsingIcon = (color, username, markerType, batteryLevel = nu
       </div>`
     : "";
 
+  // ✅ Warning icon for outside/far users
+  const warningIcon = (isOutside || isFar) && !isSOS
+    ? `<div style="position:absolute;top:-10px;left:50%;transform:translateX(-50%);z-index:10;
+          background:#f59e0b;color:white;padding:2px 6px;border-radius:8px;
+          font-weight:bold;font-size:10px;box-shadow:0 2px 8px rgba(0,0,0,0.3);
+          animation:warning-pulse 1s ease-in-out infinite;">
+        ⚠️
+      </div>`
+    : "";
+
   const iconHtml = `
     <div style="position:relative;width:40px;height:40px;">
       ${batteryIcon}
       ${sosIcon}
+      ${warningIcon}
       
       <!-- Outer pulsing ring for SOS -->
       ${
@@ -48,6 +60,21 @@ export const createPulsingIcon = (color, username, markerType, batteryLevel = nu
           : ""
       }
       
+      <!-- ✅ Blinking ring for outside/far users -->
+      ${
+        (isOutside || isFar) && !isSOS
+          ? `<span style="
+          position:absolute;
+          left:-5px;top:-5px;
+          width:50px;height:50px;
+          border-radius:50%;
+          background:rgba(245, 158, 11, 0.4);
+          animation:outside-blink 2s cubic-bezier(.4,0,.6,1) infinite;
+          z-index:1;
+        "></span>`
+          : ""
+      }
+      
       <!-- Main marker circle -->
       <span style="
         position:absolute;
@@ -59,6 +86,7 @@ export const createPulsingIcon = (color, username, markerType, batteryLevel = nu
         box-shadow:0 2px 8px rgba(0,0,0,0.3);
         z-index:2;
         ${isSOS ? "animation:marker-blink 1s ease-in-out infinite;" : ""}
+        ${isOutside || isFar ? "animation:marker-blink 1.5s ease-in-out infinite;" : ""}
       "></span>
       
       <!-- Inner icon -->
@@ -89,13 +117,22 @@ export const createPulsingIcon = (color, username, markerType, batteryLevel = nu
           50% { opacity: 0.2; transform:scale(1.3); }
           100% { opacity: 0.8; transform:scale(1); }
         }
+        @keyframes outside-blink {
+          0% { opacity: 0.7; transform:scale(1); }
+          50% { opacity: 0.1; transform:scale(1.4); }
+          100% { opacity: 0.7; transform:scale(1); }
+        }
         @keyframes marker-blink {
           0%, 100% { opacity: 1; }
-          50% { opacity: 0.5; }
+          50% { opacity: 0.4; }
         }
         @keyframes sos-pulse {
           0%, 100% { transform: translateX(-50%) scale(1); }
           50% { transform: translateX(-50%) scale(1.1); }
+        }
+        @keyframes warning-pulse {
+          0%, 100% { transform: translateX(-50%) scale(1); }
+          50% { transform: translateX(-50%) scale(1.15); }
         }
       </style>
     </div>
