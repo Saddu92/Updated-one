@@ -4,7 +4,7 @@ import { useState } from "react";
 import { HiMenu, HiX } from "react-icons/hi";
 
 const Navbar = () => {
-  const { user, logout } = useAuthStore(); // Zustand state
+  const { user, logout } = useAuthStore();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -15,32 +15,32 @@ const Navbar = () => {
   };
 
   return (
-    <header className="bg-gradient-to-tr from-[#0f172a] via-[#1e1b4b] to-[#312e81] text-white font-inter sticky top-0 z-50 shadow-md">
-      <div className="flex justify-between items-center px-6 md:px-10 py-4 md:py-6">
+    <header className="bg-white sticky top-0 z-50 border-b shadow-sm font-inter">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
         {/* Logo */}
         <Link
           to="/"
-          className="text-2xl md:text-3xl font-orbitron tracking-wide text-cyan-400 drop-shadow-md"
+          className="text-2xl font-orbitron text-sky-600 tracking-wide"
         >
           SyncFleet
         </Link>
 
-        {/* Desktop Navigation */}
-        <nav className="hidden md:flex  items-center space-x-6 font-medium">     
-          <Link to="/" className="hover:text-cyan-400 transition flex ">
+        {/* Desktop Menu */}
+        <nav className="hidden md:flex items-center gap-6 font-medium">
+          <Link to="/" className="text-gray-700 hover:text-sky-600">
             Home
           </Link>
-          <Link to="/about" className="hover:text-cyan-400 transition">
+          <Link to="/about" className="text-gray-700 hover:text-sky-600">
             About
           </Link>
-          <Link to="/contact" className="hover:text-cyan-400 transition">
+          <Link to="/contact" className="text-gray-700 hover:text-sky-600">
             Contact
           </Link>
 
           {user ? (
             <button
               onClick={handleLogout}
-              className="bg-[#FFD369] text-black px-5 py-2 rounded-lg shadow-lg hover:bg-[#b38c33] transition"
+              className="bg-amber-400 text-black px-4 py-2 rounded-lg hover:bg-amber-300 transition"
             >
               Logout
             </button>
@@ -48,13 +48,13 @@ const Navbar = () => {
             <>
               <Link
                 to="/login"
-                className="bg-cyan-500 px-5 py-2 rounded-lg shadow-lg hover:bg-cyan-400 transition"
+                className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-500"
               >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="border border-cyan-400 px-5 py-2 rounded-lg hover:bg-cyan-900 transition"
+                className="border px-4 py-2 rounded-lg hover:bg-gray-100"
               >
                 Register
               </Link>
@@ -62,61 +62,35 @@ const Navbar = () => {
           )}
         </nav>
 
-        {/* Mobile Menu Button */}
+        {/* Mobile Button */}
         <button
-          className="md:hidden text-white text-3xl focus:outline-none"
+          className="md:hidden text-gray-700 text-3xl"
           onClick={() => setMenuOpen(!menuOpen)}
         >
           {menuOpen ? <HiX /> : <HiMenu />}
         </button>
       </div>
 
-      {/* Mobile Navigation */}
+      {/* Mobile Menu */}
       {menuOpen && (
-        <nav className="md:hidden bg-[#0f172a]/95 backdrop-blur-md px-6 pb-6 space-y-4 flex flex-col items-center">
-          <Link
-            to="/"
-            onClick={() => setMenuOpen(false)}
-            className="hover:text-cyan-400 transition"
-          >
-            Home
-          </Link>
-          <Link
-            to="/about"
-            onClick={() => setMenuOpen(false)}
-            className="hover:text-cyan-400 transition"
-          >
-            About
-          </Link>
-          <Link
-            to="/contact"
-            onClick={() => setMenuOpen(false)}
-            className="hover:text-cyan-400 transition"
-          >
-            Contact
-          </Link>
+        <nav className="md:hidden bg-white border-t px-6 py-4 flex flex-col gap-4">
+          <Link to="/" onClick={() => setMenuOpen(false)}>Home</Link>
+          <Link to="/about" onClick={() => setMenuOpen(false)}>About</Link>
+          <Link to="/contact" onClick={() => setMenuOpen(false)}>Contact</Link>
 
           {user ? (
             <button
               onClick={handleLogout}
-              className="bg-[#FFD369] text-black px-5 py-2 rounded-lg shadow-lg hover:bg-[#b38c33] transition"
+              className="bg-amber-400 py-2 rounded-lg"
             >
               Logout
             </button>
           ) : (
             <>
-              <Link
-                to="/login"
-                onClick={() => setMenuOpen(false)}
-                className="bg-cyan-500 px-5 py-2 rounded-lg shadow-lg hover:bg-cyan-400 transition w-full text-center"
-              >
+              <Link to="/login" className="bg-sky-600 text-white py-2 rounded-lg text-center">
                 Login
               </Link>
-              <Link
-                to="/register"
-                onClick={() => setMenuOpen(false)}
-                className="border border-cyan-400 px-5 py-2 rounded-lg hover:bg-cyan-900 transition w-full text-center"
-              >
+              <Link to="/register" className="border py-2 rounded-lg text-center">
                 Register
               </Link>
             </>

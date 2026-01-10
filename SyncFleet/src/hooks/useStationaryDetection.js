@@ -1,5 +1,5 @@
 // hooks/useStationaryDetection.js
-import { useRef, useCallback, useState } from "react";
+import { useRef, useCallback, useState, useEffect } from "react";
 import haversine from "haversine-distance";
 import { STATIONARY_LIMIT, MOVEMENT_THRESHOLD } from "../utils/helper.js";
 
@@ -58,6 +58,43 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
     },
     [emitSOS, mySocketId, showStationaryPrompt, setUserLocations]
   );
+
+  // Background interval to evaluate stationary state even if coords stop updating
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      try {
+        const now = Date.now();
+        if (
+          lastPositionRef.current &&
+          now - lastMovedAtRef.current > STATIONARY_LIMIT &&
+          !showStationaryPrompt
+        ) {
+          // Trigger prompt and start auto-send timeout
+          setShowStationaryPrompt(true);
+          clearTimeout(stationaryPromptTimeout.current);
+          stationaryPromptTimeout.current = setTimeout(() => {
+            setShowStationaryPrompt(false);
+            setUserLocations((prev) => ({
+              ...prev,
+              [mySocketId]: {
+                ...(prev[mySocketId] || {}),
+                isStationary: true,
+                isSOS: true,
+              },
+            }));
+            emitSOS();
+          }, 30000);
+        }
+      } catch (e) {
+        // ignore
+      }
+    }, 10000); // check every 10s
+
+    return () => {
+      clearInterval(intervalId);
+      clearTimeout(stationaryPromptTimeout.current);
+    };
+  }, [emitSOS, mySocketId, setUserLocations, showStationaryPrompt]);
 
     // Programmatically trigger the stationary prompt (used when server asks)
     const triggerStationaryPrompt = useCallback((message, timeout = 30000) => {

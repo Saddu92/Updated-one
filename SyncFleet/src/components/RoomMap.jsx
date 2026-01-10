@@ -614,7 +614,7 @@ const RoomMap = ({ room }) => {
 
   return (
     <ErrorBoundary>
-      <div className="relative h-screen w-screen overflow-hidden">
+      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-white via-sky-50 to-sky-100 text-gray-800">
         {/* Toast */}
         <Toast message={toast?.message} type={toast?.type} />
 
@@ -625,18 +625,18 @@ const RoomMap = ({ room }) => {
           onNo={handleStationaryNo}
         />
 
-        <div className="flex h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] p-6 gap-6">
+        <div className="flex flex-col md:flex-row h-auto md:h-screen bg-transparent p-4 md:p-6 gap-4 md:gap-6">
           {/* Map Section */}
-          <div className="w-[80%] h-full">
-            <div className="h-full w-full rounded-2xl shadow-2xl border-2 border-indigo-500/40 overflow-hidden bg-gray-900/40 backdrop-blur-md">
+          <div className="w-full md:w-4/5 h-full">
+            <div className="h-full w-full rounded-2xl shadow-lg border border-gray-200 overflow-hidden bg-white/80 relative">
               {/* Connection Status */}
-              <div className="absolute top-4 left-4 z-[9999] flex items-center">
+              <div className="absolute top-4 left-4 z-[9999] flex items-center bg-white/70 px-3 py-1 rounded-full shadow-sm border">
                 <div
                   className={`w-3 h-3 rounded-full mr-2 ${
-                    socket.connected ? "bg-green-500" : "bg-red-500"
+                    socket.connected ? "bg-green-600" : "bg-red-500"
                   }`}
                 />
-                <span className="text-sm text-white">
+                <span className="text-sm text-gray-700">
                   {socket.connected ? "Connected" : "Disconnected"}
                   {isConnecting && " (Connecting...)"}
                 </span>
@@ -668,32 +668,33 @@ const RoomMap = ({ room }) => {
               />
             </div>
           </div>
+
+         
         </div>
 
         {/* Top Right Buttons */}
-        <div className="absolute top-4 right-4 z-[9999] flex flex-col items-center gap-2">
+<div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2">
           {/* Main Buttons */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             {/* Recenter */}
+            {/* (desktop inline chat removed from toolbar to avoid duplication) */}
             <button
               onClick={handleRecenter}
-              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-white/30 transition-all duration-300"
+              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               title="Recenter map"
             >
-              <IoLocationSharp className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <IoLocationSharp className="text-sky-600 text-xl group-hover:scale-110 transition-transform duration-200" />
             </button>
 
             {/* Chat */}
             <button
               onClick={() => setChatOpen(!chatOpen)}
-              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-white/30 transition-all duration-300"
+              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               title="Toggle chat"
             >
-              <FiMessageSquare className="text-blue-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <FiMessageSquare className="text-sky-600 text-xl group-hover:scale-110 transition-transform duration-200" />
               {messages.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow">
                   {messages.length}
                 </span>
               )}
@@ -702,12 +703,11 @@ const RoomMap = ({ room }) => {
             {/* Users */}
             <button
               onClick={() => setPanelOpen(!panelOpen)}
-              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-white/30 transition-all duration-300"
+              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
               title="Toggle panel"
             >
-              <FiUsers className="text-green-400 text-xl group-hover:scale-110 transition-transform duration-200" />
-              <span className="absolute -top-1.5 -right-1.5 bg-green-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow-md">
+              <FiUsers className="text-emerald-600 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow">
                 {activeUserCount}
               </span>
             </button>
@@ -715,11 +715,10 @@ const RoomMap = ({ room }) => {
             {/* Leave Room */}
             <button
               onClick={handleLeaveRoom}
-              className="group relative p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-red-500/80 hover:text-white transition-all duration-300"
+              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:shadow-md transition-all duration-200"
               title="Leave room"
             >
-              <IoExitOutline className="text-red-400 text-xl group-hover:scale-110 transition-transform duration-200" />
+              <IoExitOutline className="text-red-600 text-xl group-hover:scale-110 transition-transform duration-200" />
             </button>
           </div>
 
@@ -727,29 +726,46 @@ const RoomMap = ({ room }) => {
           <div className="flex items-center gap-2 ml-2">
             <button
               onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
-              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-red-600 hover:text-white transition-all duration-300"
+              className="group relative flex items-center justify-center gap-2 p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 transition-all duration-200"
               title="Mark Pothole"
             >
-              <GiRoad className="text-red-500 group-hover:text-white text-xl" />
-              <span className="text-red-500 group-hover:text-white font-semibold text-sm">
+              <GiRoad className="text-red-600 text-xl" />
+              <span className="text-red-600 font-semibold text-sm">
                 Pothole
               </span>
             </button>
 
             <button
               onClick={() => addHazard("Accident", coords.lat, coords.lng)}
-              className="group relative flex items-center justify-center gap-2 p-3 bg-white/20 backdrop-blur-lg border border-white/20 rounded-xl shadow-lg 
-                 hover:bg-yellow-500 hover:text-white transition-all duration-300"
+              className="group relative flex items-center justify-center gap-2 p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-yellow-50 transition-all duration-200"
               title="Mark Accident"
             >
-              <MdOutlineWarning className="text-yellow-500 group-hover:text-white text-xl" />
-              <span className="text-yellow-500 group-hover:text-white font-semibold text-sm">
+              <MdOutlineWarning className="text-amber-600 text-xl" />
+              <span className="text-amber-600 font-semibold text-sm">
                 Accident
               </span>
             </button>
+            
           </div>
+          {/* Chat box below buttons (desktop) */}
+{chatOpen && (
+  <div className="hidden md:block mt-40 w-[300px] h-[420px]">
+    <ChatPanel
+      isOpen={true}
+      onClose={() => setChatOpen(false)}
+      messages={messages}
+      newMessage={newMessage}
+      setNewMessage={setNewMessage}
+      onSend={handleSendMessage}
+      currentUser={user?.name}
+      inline={true}
+      className="h-full"
+    />
+  </div>
+)}
+
         </div>
+        
 
         {/* Users Panel */}
         <UsersPanel
@@ -769,16 +785,18 @@ const RoomMap = ({ room }) => {
           creatorSocketId={creatorSocketId}
         />
 
-        {/* Chat Panel */}
-        <ChatPanel
-          isOpen={chatOpen}
-          onClose={() => setChatOpen(false)}
-          messages={messages}
-          newMessage={newMessage}
-          setNewMessage={setNewMessage}
-          onSend={handleSendMessage}
-          currentUser={user?.name}
-        />
+        {/* Chat Panel (floating) - only show on small screens; desktop uses right-column inline chat */}
+        <div className="md:hidden">
+          <ChatPanel
+            isOpen={chatOpen}
+            onClose={() => setChatOpen(false)}
+            messages={messages}
+            newMessage={newMessage}
+            setNewMessage={setNewMessage}
+            onSend={handleSendMessage}
+            currentUser={user?.name}
+          />
+        </div>
 
         {/* Leave Room Modal */}
         <LeaveRoomModal

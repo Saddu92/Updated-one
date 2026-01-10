@@ -21,20 +21,21 @@ const UsersPanel = ({
   if (!isOpen) return null;
 
   return (
-    <div className="absolute top-4 left-4 w-72 bg-gray-900/70 backdrop-blur-md rounded-xl shadow-2xl z-[9999] overflow-hidden border border-gray-700">
+    <div className="fixed bottom-4 left-4 right-4 md:top-4 md:left-4 md:right-auto w-auto md:w-72 max-w-sm md:max-w-none bg-white/95 text-gray-800 border border-gray-200 rounded-xl shadow-lg z-[9999] overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between p-3 bg-green-600 rounded-t-xl text-white font-semibold text-sm shadow-md">
+      <div className="flex items-center justify-between p-3 bg-sky-600 rounded-t-xl text-white font-semibold text-sm shadow-sm">
         <span>Active Users ({activeUsers.length})</span>
         <button
           onClick={onClose}
-          className="text-white hover:text-gray-200 transition-all text-lg font-bold"
+          className="text-white hover:text-sky-100 transition-all text-lg font-bold"
+          aria-label="Close users panel"
         >
           ×
         </button>
       </div>
 
       {/* Users List */}
-      <div className="max-h-64 overflow-y-auto divide-y divide-gray-700 scrollbar-thin scrollbar-thumb-green-500 scrollbar-track-gray-800">
+      <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 p-1">
         {activeUsers.map((user) => {
           const location = userLocations[user.socketId] || {};
           const batteryLevel = location.battery?.level ?? null;
@@ -44,9 +45,9 @@ const UsersPanel = ({
           return (
             <div
               key={user.socketId}
-              className={`flex items-center justify-between p-2 hover:bg-gray-800 rounded transition ${
-                location.isStationary ? "bg-red-900/30" : ""
-              } ${isCreator ? "bg-yellow-900/20" : ""}`}
+              className={`flex items-center justify-between p-2 rounded transition ${
+                location.isStationary ? "bg-red-50" : ""
+              } ${isCreator ? "bg-yellow-50" : ""}`}
             >
               <div className="flex items-center gap-2 truncate flex-1">
                 <div
@@ -65,14 +66,14 @@ const UsersPanel = ({
                     </span>
                     {/* ✅ Creator Badge */}
                     {isCreator && (
-                      <span className="bg-yellow-500 text-black text-xs px-2 py-0.5 rounded-full font-bold">
+                      <span className="bg-yellow-400 text-black text-xs px-2 py-0.5 rounded-full font-bold">
                         👑 Leader
                       </span>
                     )}
                   </div>
                   {/* ✅ Show distance from creator for non-creators */}
                   {!isCreator && geofence.center && location.coords && (
-                    <span className="text-xs text-gray-400">
+                    <span className="text-xs text-gray-500">
                       {Math.round(
                         haversine(location.coords, geofence.center)
                       )}m from leader
@@ -87,10 +88,10 @@ const UsersPanel = ({
                   <span
                     className={`font-medium ${
                       batteryLevel < 0.15
-                        ? "text-red-500"
+                        ? "text-red-600"
                         : batteryLevel < 0.3
-                        ? "text-orange-400"
-                        : "text-green-400"
+                        ? "text-orange-500"
+                        : "text-emerald-600"
                     }`}
                     title={`Battery: ${Math.round(batteryLevel * 100)}%`}
                   >
@@ -101,12 +102,12 @@ const UsersPanel = ({
 
                 {/* Outside geofence - only for non-creators */}
                 {!isCreator && outside && (
-                  <span className="text-orange-400 font-semibold">⚠️ FAR</span>
+                  <span className="text-orange-500 font-semibold">⚠️ FAR</span>
                 )}
 
                 {/* SOS */}
                 {location.isStationary && (
-                  <span className="text-red-500 font-bold">🚨 SOS</span>
+                  <span className="text-red-600 font-bold">🚨 SOS</span>
                 )}
               </div>
             </div>
@@ -115,14 +116,14 @@ const UsersPanel = ({
       </div>
 
       {/* Trail Duration */}
-      <div className="p-2 border-t border-gray-700">
-        <label className="text-xs text-gray-400 mb-1 block">
+      <div className="p-3 border-t border-gray-100 bg-white">
+        <label className="text-xs text-gray-600 mb-1 block">
           Trail Duration (minutes)
         </label>
         <select
           value={trailDuration}
           onChange={(e) => setTrailDuration(Number(e.target.value))}
-          className="w-full p-1 border border-gray-600 rounded text-xs bg-gray-800 text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+          className="w-full p-2 border border-gray-200 rounded text-sm bg-white text-gray-700 focus:ring-1 focus:ring-sky-300 focus:border-sky-300"
         >
           <option value={5}>5</option>
           <option value={10}>10</option>
@@ -131,8 +132,8 @@ const UsersPanel = ({
       </div>
 
       {/* Geofence Radius */}
-      <div className="p-2 border-t border-gray-700">
-        <label className="text-xs text-gray-400 mb-1 block">
+      <div className="p-3 border-t border-gray-100 bg-white">
+        <label className="text-xs text-gray-600 mb-1 block">
           Geofence Radius (meters) - Leader's Area
         </label>
         <input
@@ -142,7 +143,7 @@ const UsersPanel = ({
           step={50}
           value={geofenceRadius}
           onChange={(e) => setGeofenceRadius(Number(e.target.value))}
-          className="w-full p-1 border border-gray-600 rounded text-xs bg-gray-800 text-white focus:ring-1 focus:ring-green-500 focus:border-green-500"
+          className="w-full p-2 border border-gray-200 rounded text-sm bg-white text-gray-700 focus:ring-1 focus:ring-sky-300 focus:border-sky-300"
         />
         <p className="text-xs text-gray-500 mt-1">
           All members should stay within this distance from the leader

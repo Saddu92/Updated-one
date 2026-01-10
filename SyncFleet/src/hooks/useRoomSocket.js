@@ -233,6 +233,19 @@ export const useRoomSocket = ({
       if (showToast) showToast(`${username} is moving again`, "info");
     };
 
+    const handleUserSOSCleared = ({ socketId, username }) => {
+      setUserLocations((prev) => ({
+        ...prev,
+        [socketId]: {
+          ...(prev[socketId] || {}),
+          isSOS: false,
+          isStationary: false,
+        },
+      }));
+
+      if (showToast) showToast(`${username} is OK`, "info");
+    };
+
     const handleUserSOS = ({ socketId, username }) => {
       setUserLocations((prev) => ({
         ...prev,
@@ -272,6 +285,7 @@ export const useRoomSocket = ({
       }
     });
     socket.on("user-stationary-cleared", handleUserStationaryCleared);
+    socket.on("user-sos-cleared", handleUserSOSCleared);
     socket.on("user-sos", handleUserSOS);
     socket.on("room-message", handleRoomMessage);
     socket.on("room-users", handleRoomUsers);
@@ -302,6 +316,7 @@ export const useRoomSocket = ({
       socket.off("anomaly-alert", handleAnomalyAlert);
       socket.off("user-stationary", handleUserStationary);
       socket.off("user-stationary-cleared", handleUserStationaryCleared);
+      socket.off("user-sos-cleared", handleUserSOSCleared);
       socket.off("user-sos", handleUserSOS);
       socket.off("room-message", handleRoomMessage);
       socket.off("room-users", handleRoomUsers);

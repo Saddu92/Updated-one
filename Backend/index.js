@@ -346,6 +346,16 @@ io.on("connection", (socket) => {
         content: `${socket.data.username} confirmed they are OK.`,
         timestamp: Date.now(),
       });
+      // Notify other clients to clear SOS / stationary indicators for this user
+      io.to(roomCode).emit("user-sos-cleared", {
+        socketId: socket.id,
+        username: socket.data.username,
+        userId: socket.data.userId,
+      });
+      io.to(roomCode).emit("user-stationary-cleared", {
+        socketId: socket.id,
+        username: socket.data.username,
+      });
     } else {
       if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
       stationaryState[roomCode][socket.id] = true;

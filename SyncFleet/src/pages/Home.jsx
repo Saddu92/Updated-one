@@ -20,7 +20,7 @@ const mapStyles = {
 const Home = () => {
   const [style, setStyle] = useState("osm");
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] text-white font-inter">
+    <div className="min-h-screen bg-gradient-to-br from-white via-sky-50 to-sky-100 text-gray-800 font-inter">
       <Navbar />
 
       {/* Hero Section */}
@@ -28,10 +28,10 @@ const Home = () => {
         {/* Left Content */}
         <div className="flex-1 text-center md:text-left space-y-6">
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-extrabold font-orbitron leading-tight">
-            Track <span className="text-cyan-400">Together</span>,<br />
-            Travel <span className="text-green-400">Smarter</span>.
+            Track <span className="text-sky-600">Together</span>,<br />
+            Travel <span className="text-emerald-600">Smarter</span>.
           </h1>
-          <p className="text-base sm:text-lg text-gray-300 max-w-md md:max-w-lg mx-auto md:mx-0">
+          <p className="text-base sm:text-lg text-gray-600 max-w-md md:max-w-lg mx-auto md:mx-0">
             Real-time group tracking with trails, in-app chat, and emergency SOS
             alerts. Built for road trips, bikers, and explorers who stay
             together.
@@ -39,13 +39,13 @@ const Home = () => {
           <div className="flex flex-col sm:flex-row justify-center lg:justify-start gap-4 mt-4">
             <Link
               to="/dashboard"
-              className="bg-cyan-500 text-white px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-cyan-400 transition shadow-md text-center"
+              className="bg-sky-600 text-white px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-sky-500 transition shadow-md text-center"
             >
               Get Started
             </Link>
             <Link
               to="/about"
-              className="border border-cyan-400 px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-cyan-900 transition text-center"
+              className="border border-sky-200 px-6 sm:px-8 py-3 rounded-xl text-lg hover:bg-sky-50 transition text-center text-sky-700"
             >
               Learn More
             </Link>
@@ -53,14 +53,12 @@ const Home = () => {
         </div>
 
         {/* Right Mockup */}
-        <div className="flex-1 flex justify-center relative w-full max-w-md mx-auto md:mx-0">
-          <div className="w-full sm:w-72 h-[400px] sm:h-[500px] rounded-3xl shadow-[0_0_20px_rgba(56,189,248,0.6)] bg-gray-900 overflow-hidden relative flex flex-col z-[10]">
+          <div className="flex-1 flex justify-center relative w-full max-w-md mx-auto md:mx-0">
+          <div className="w-full sm:w-80 h-[420px] sm:h-[520px] rounded-3xl shadow-lg bg-white border border-gray-100 overflow-hidden relative flex flex-col z-[10]">
             {/* Mockup Header */}
-            <div className="bg-gray-800 py-2 px-4 flex justify-between items-center flex-shrink-0">
-              <span className="text-sm">SyncFleet Map</span>
-              <span className="text-xs text-green-400 animate-pulse">
-                ● Live
-              </span>
+            <div className="bg-white/80 py-2 px-4 flex justify-between items-center flex-shrink-0 border-b border-gray-100">
+              <span className="text-sm text-gray-700">SyncFleet Map</span>
+              <span className="text-xs text-emerald-600 animate-pulse">● Live</span>
             </div>
 
             {/* Map */}
@@ -79,15 +77,14 @@ const Home = () => {
 
               {/* Toggle button */}
               <button
-                className="absolute top-2 right-2 bg-gray-800 px-2 py-1 rounded text-white z-[999]"
+                className="absolute top-2 right-2 bg-white border border-gray-100 px-2 py-1 rounded text-gray-700 z-[999] shadow-sm"
                 onClick={() => setStyle(style === "osm" ? "stamen" : "osm")}
               >
                 Switch Map
               </button>
             </div>
-
             {/* Floating SOS */}
-            <button className="absolute z-[999] bottom-4 right-4 sm:bottom-6 sm:right-6 bg-red-500 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-red-600 transition animate-ping">
+            <button className="absolute z-[999] bottom-4 left-4 sm:bottom-6 sm:left-6 bg-red-600 w-12 h-12 sm:w-14 sm:h-14 rounded-full flex items-center justify-center shadow-lg hover:bg-red-700 transition">
               SOS
             </button>
           </div>

@@ -69,22 +69,23 @@
   opacity: 0.8;
 }
 
-/* Custom scrollbar */
+/* Custom scrollbar (light theme) */
 .scrollbar-thin::-webkit-scrollbar {
-  width: 6px;
+  width: 8px;
 }
 
 .scrollbar-thin::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: #f1f5f9;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb {
-  background: #10b981;
-  border-radius: 3px;
+  background: #93c5fd;
+  border-radius: 6px;
+  border: 2px solid #f1f5f9;
 }
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-  background: #059669;
+  background: #60a5fa;
 }
 
 @layer base {
