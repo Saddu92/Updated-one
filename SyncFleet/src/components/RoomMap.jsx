@@ -134,7 +134,7 @@ const RoomMap = ({ room }) => {
   const [trailDuration, setTrailDuration] = useState(DEFAULT_TRAIL_DURATION);
   const [geofence, setGeofence] = useState({
     center: null,
-    radius: 0,
+    radius: 300,
   });
   const [currentRoom, setCurrentRoom] = useState(null);
   const [sourceCoords, setSourceCoords] = useState(null);
@@ -599,6 +599,7 @@ const RoomMap = ({ room }) => {
       </div>
     );
   }
+  // console.log(coords)
   if (!coords) {
     return (
       <div className="flex items-center justify-center h-screen">
