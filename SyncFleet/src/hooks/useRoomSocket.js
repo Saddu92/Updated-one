@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { getSocket } from "../utils/socket.js";
 import { SOS_DURATION, INACTIVE_THRESHOLD, PATH_HISTORY_LIMIT } from "../utils/helper.js";
 
+
 export const useRoomSocket = ({
   roomCode,
   user,
@@ -28,6 +29,7 @@ export const useRoomSocket = ({
 
   const stationaryCheckIntervalRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
+  const lastSeenRef = useRef({});
 
   useEffect(() => {
     if (!isUserReady || !user?.id) return;
@@ -75,7 +77,19 @@ export const useRoomSocket = ({
       if (onUserJoined) onUserJoined({ username, socketId, isCreator });
     };
 
+const handleUserStatus = ({ userId, status }) => {
+  setUserLocations((prev) => ({
+    ...prev,
+    [userId]: {
+      ...(prev[userId] || {}),
+      networkStatus: status, // "offline"
+    },
+  }));
+};
+
+
     const handleUserLeft = ({ socketId }) => {
+       delete lastSeenRef.current[socketId]; 
       setUserLocations((prev) => {
         const newLocations = { ...prev };
         delete newLocations[socketId];
@@ -96,6 +110,7 @@ export const useRoomSocket = ({
 
     const handleLocationUpdate = ({ socketId, username, coords, isCreator }) => {
       const now = Date.now();
+        lastSeenRef.current[socketId] = now;
       setUserLocations((prev) => {
         const existing = prev[socketId] || {};
         const filteredPath = [
@@ -114,6 +129,7 @@ export const useRoomSocket = ({
             isCreator: isCreator || false, // ✅ Store creator flag
             lastSeen: now,
             path: filteredPath,
+              networkStatus: "online",
           },
         };
       });
@@ -243,6 +259,13 @@ export const useRoomSocket = ({
         },
       }));
 
+      // ✅ REMOVE FROM ALERT USERS SET
+      setAlertUsers((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(socketId);
+        return newSet;
+      });
+
       if (showToast) showToast(`${username} is OK`, "info");
     };
 
@@ -277,6 +300,7 @@ export const useRoomSocket = ({
     socket.on("location-update", handleLocationUpdate);
     socket.on("anomaly-alert", handleAnomalyAlert);
     socket.on("user-stationary", handleUserStationary);
+    socket.on("user-status",handleUserStatus)
     socket.on('stationary-confirm', (data) => {
       try {
         window.dispatchEvent(new CustomEvent('syncfleet:stationary-confirm', { detail: data }));
@@ -339,6 +363,37 @@ export const useRoomSocket = ({
     onCreatorIdentified,
     creatorSocketId,
   ]);
+
+  // 🔄 Network quality checker (online → weak)
+useEffect(() => {
+  const interval = setInterval(() => {
+    const now = Date.now();
+
+    setUserLocations((prev) => {
+      const updated = { ...prev };
+
+      Object.entries(updated).forEach(([socketId, user]) => {
+        if (!user) return;
+        if (user.networkStatus === "offline") return;
+
+        const lastSeen = lastSeenRef.current[socketId];
+        if (!lastSeen) return;
+
+        if (now - lastSeen > 20000) {
+          updated[socketId] = {
+            ...user,
+            networkStatus: "weak",
+          };
+        }
+      });
+
+      return updated;
+    });
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, []);
+
 
   return {
     mySocketId,

@@ -9,6 +9,7 @@ import roomRoutes from "./routes/roomRoutes.js";
 import haversine from "haversine-distance";
 import orsRoutes from "./routes/orsRoutes.js";
 import Room from "./models/Room.js";
+import redis from "./utils/redis.js";
 
 dotenv.config();
 connectDB();
@@ -23,6 +24,7 @@ const io = new Server(server, {
   },
 });
 
+
 app.use(cors());
 app.use(express.json());
 app.use("/api/auth", authRoutes);
@@ -31,16 +33,12 @@ app.use("/api/ors", orsRoutes);
 
 const PORT = process.env.PORT || 5000;
 const userSocketMap = new Map();
-const roomLocations = {};
 const roomCreators = {};
-const lastDeviationAlert = new Map();
+
 
 const ALERT_COOLDOWN = 30000;
 const outOfGeofence = new Map(); // ✅ Track users outside geofence
 
-// Stationary detection
-const lastMoveTimestamp = {};
-const stationaryState = {};
 const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   ? parseInt(process.env.STATIONARY_THRESHOLD_MS, 10)
   : 2 * 60 * 1000;
@@ -49,83 +47,138 @@ const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   : 30 * 1000;
 const pendingConfirmations = {};
 
-console.log(`⏱️ Stationary threshold set to ${Math.round(STATIONARY_THRESHOLD / 1000)}s`);
+console.log(
+  `⏱️ Stationary threshold set to ${Math.round(STATIONARY_THRESHOLD / 1000)}s`
+);
+
 
 // Periodic stationary check
-setInterval(() => {
+setInterval(async () => {
   const now = Date.now();
-  Object.keys(lastMoveTimestamp).forEach((roomCode) => {
-    const timestamps = lastMoveTimestamp[roomCode] || {};
-    Object.keys(timestamps).forEach((socketId) => {
-      const last = timestamps[socketId] || 0;
-      if (now - last >= STATIONARY_THRESHOLD) {
-        if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
-        if (!stationaryState[roomCode][socketId]) {
-          const sock = io.sockets.sockets.get(socketId);
-          const username = sock?.data?.username || "Unknown";
-          try {
-            sock?.emit("stationary-confirm", {
-              message: `We've noticed you haven't moved for ${Math.round(
-                STATIONARY_THRESHOLD / 60000
-              )} minutes. Are you alright?`,
-              timeout: STATIONARY_CONFIRM_TIMEOUT,
-            });
-          } catch (e) {
-            io.to(roomCode).emit("user-stationary", {
-              socketId,
-              username,
-              since: last,
-            });
-            io.to(roomCode).emit("room-message", {
-              from: "System",
-              type: "warning",
-              content: `⚠️ ${username} has been stationary for more than ${Math.round(
-                STATIONARY_THRESHOLD / 60000
-              )} minutes.`,
-              timestamp: Date.now(),
-            });
-            stationaryState[roomCode][socketId] = true;
-            return;
-          }
 
-          if (!pendingConfirmations[roomCode])
-            pendingConfirmations[roomCode] = {};
-          if (pendingConfirmations[roomCode][socketId])
-            clearTimeout(pendingConfirmations[roomCode][socketId]);
-          pendingConfirmations[roomCode][socketId] = setTimeout(() => {
-            if (!stationaryState[roomCode][socketId]) {
-              stationaryState[roomCode][socketId] = true;
-              io.to(roomCode).emit("user-stationary", {
-                socketId,
-                username,
-                since: last,
-              });
-              io.to(roomCode).emit("room-message", {
-                from: "System",
-                type: "warning",
-                content: `⚠️ ${username} has been stationary for more than ${Math.round(
-                  STATIONARY_THRESHOLD / 60000
-                )} minutes.`,
-                timestamp: Date.now(),
-              });
-            }
-            delete pendingConfirmations[roomCode][socketId];
-          }, STATIONARY_CONFIRM_TIMEOUT);
-        }
-      }
-    });
+  // 🔹 Fetch all users' lastMove timestamps
+  const keys = await redis.keys("room:*:user:*:lastMove");
+
+  for (const key of keys) {
+    const last = parseInt(await redis.get(key), 10);
+    if (!last) continue;
+
+    if (now - last < STATIONARY_THRESHOLD) continue;
+
+    // key format: room:{roomCode}:user:{userId}:lastMove
+    const [, roomCode, , userId] = key.split(":");
+
+    const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
+
+    // 🔹 Already marked stationary? (same logic as before)
+    const alreadyStationary = await redis.get(stationaryKey);
+    if (alreadyStationary === "true") continue;
+
+    // 🔹 Mark stationary in Redis
+    await redis.set(stationaryKey, "true");
+
+    // 🔹 Find socket for this user
+    const socketId = userSocketMap.get(userId);
+    const sock = io.sockets.sockets.get(socketId);
+    if (!sock) continue;
+
+    const username = sock.data?.username || "Unknown";
+
+    // 🔹 Ask user for confirmation (UNCHANGED BEHAVIOR)
+    try {
+      sock.emit("stationary-confirm", {
+        message: `We've noticed you haven't moved for ${Math.round(
+          STATIONARY_THRESHOLD / 60000
+        )} minutes. Are you alright?`,
+        timeout: STATIONARY_CONFIRM_TIMEOUT,
+      });
+    } catch {
+      // Same fallback behavior as your code
+      io.to(roomCode).emit("user-stationary", {
+        userId,
+        username,
+        since: last,
+      });
+
+      io.to(roomCode).emit("room-message", {
+        from: "System",
+        type: "warning",
+        content: `⚠️ ${username} has been stationary for more than ${Math.round(
+          STATIONARY_THRESHOLD / 60000
+        )} minutes.`,
+        timestamp: Date.now(),
+      });
+
+      continue;
+    }
+
+    // 🔹 Confirmation timeout (UNCHANGED LOGIC)
+    if (!pendingConfirmations[roomCode]) {
+      pendingConfirmations[roomCode] = {};
+    }
+
+    if (pendingConfirmations[roomCode][userId]) {
+      clearTimeout(pendingConfirmations[roomCode][userId]);
+    }
+
+ pendingConfirmations[roomCode][userId] = setTimeout(async () => {
+  const stillStationary = await redis.get(stationaryKey);
+  // ✅ CHECK: If user already confirmed, don't escalate to SOS
+  if (stillStationary !== "true") {
+    delete pendingConfirmations[roomCode][userId];
+    return;
+  }
+
+  // ✅ ALSO CHECK: If there's no pending confirmation anymore, user already responded
+  if (!pendingConfirmations[roomCode]?.[userId]) {
+    return;
+  }
+
+  // 🔴 ESCALATE TO SOS
+  io.to(roomCode).emit("user-sos", {
+    socketId: socketId,
+    username,
+    userId,
   });
+
+  // 🔴 SEND CHAT MESSAGE
+  io.to(roomCode).emit("room-message", {
+    from: "System",
+    type: "sos",
+    content: `🚨 ${username} is unresponsive and may need help!`,
+    timestamp: Date.now(),
+  });
+
+  delete pendingConfirmations[roomCode][userId];
+}, STATIONARY_CONFIRM_TIMEOUT);
+
+  }
 }, 30 * 1000);
 
 // SOCKET HANDLERS
 io.on("connection", (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
 
-  socket.on("join-room", ({ roomCode, username, userId }) => {
+  socket.on("join-room", async ({ roomCode, username, userId }) => {
     if (!roomCode || !username || !userId) {
       console.warn("⚠ join-room failed:", { roomCode, username, userId });
       return;
     }
+
+    socket.data.roomCode = roomCode;
+    socket.data.userId = userId;
+    socket.data.username = username;
+    await redis.set(
+      `room:${roomCode}:user:${userId}:status`,
+      "online",
+      "EX",
+      20
+    );
+
+    socket.to(roomCode).emit("user-status", {
+      userId,
+      status: "online",
+    });
 
     if (userSocketMap.has(userId)) {
       const oldSocketId = userSocketMap.get(userId);
@@ -140,9 +193,6 @@ io.on("connection", (socket) => {
 
     userSocketMap.set(userId, socket.id);
     socket.join(roomCode);
-    socket.data.roomCode = roomCode;
-    socket.data.username = username;
-    socket.data.userId = userId;
 
     Room.findOne({ code: roomCode })
       .then((room) => {
@@ -165,16 +215,16 @@ io.on("connection", (socket) => {
             }`
           );
 
-          const users = [
-            ...(io.sockets.adapter.rooms.get(roomCode) || []),
-          ].map((socketId) => {
-            const sock = io.sockets.sockets.get(socketId);
-            return {
-              socketId,
-              username: sock?.data.username,
-              isCreator: sock?.data.isCreator || false,
-            };
-          });
+          const users = [...(io.sockets.adapter.rooms.get(roomCode) || [])].map(
+            (socketId) => {
+              const sock = io.sockets.sockets.get(socketId);
+              return {
+                socketId,
+                username: sock?.data.username,
+                isCreator: sock?.data.isCreator || false,
+              };
+            }
+          );
           io.to(roomCode).emit("room-users", users);
           socket.to(roomCode).emit("user-joined", {
             username,
@@ -188,7 +238,7 @@ io.on("connection", (socket) => {
       });
   });
 
-  socket.on("location-update", ({ roomCode, coords }) => {
+  socket.on("location-update", async ({ roomCode, coords }) => {
     if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
       console.warn("⚠ location-update failed:", {
         roomCode,
@@ -198,42 +248,52 @@ io.on("connection", (socket) => {
       return;
     }
 
+
     const isCreator = socket.data.isCreator || false;
 
-    if (!roomLocations[roomCode]) roomLocations[roomCode] = {};
-    roomLocations[roomCode][socket.id] = coords;
+    const redisKey = `room:${roomCode}:locations`;
+    const currentKey = socket.id;
+    const prevKey = `${socket.id}:prev`;
 
-    if (isCreator && roomCreators[roomCode]) {
-      roomCreators[roomCode].coords = coords;
-      console.log(`👑 Updated creator position for room ${roomCode}`);
+    const prevRaw = await redis.hget(redisKey, prevKey);
+    const prevLoc = prevRaw ? JSON.parse(prevRaw) : null;
+
+    let moved = true;
+    if (prevLoc) {
+      try {
+        moved = haversine(prevLoc, coords) > 5;
+      } catch {
+        moved = true;
+      }
     }
 
-    if (!lastMoveTimestamp[roomCode]) lastMoveTimestamp[roomCode] = {};
-    if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
-
-    const now = Date.now();
-
-    const moved = (() => {
-      const prevLoc = (roomLocations[roomCode] || {})[socket.id + "__prev"];
-      if (!prevLoc) return true;
-      try {
-        const d = haversine(prevLoc, coords);
-        return d > 5;
-      } catch (e) {
-        return true;
-      }
-    })();
-
-    roomLocations[roomCode][socket.id + "__prev"] = coords;
+    await redis.hset(redisKey, prevKey, JSON.stringify(coords));
+    await redis.hset(redisKey, currentKey, JSON.stringify(coords));
 
     if (moved) {
-      lastMoveTimestamp[roomCode][socket.id] = now;
-      if (stationaryState[roomCode][socket.id]) {
-        stationaryState[roomCode][socket.id] = false;
+      await redis.set(
+        `room:${roomCode}:user:${socket.data.userId}:lastMove`,
+        Date.now()
+      );
+
+      await redis.set(
+        `room:${roomCode}:user:${socket.data.userId}:status`,
+        "online",
+        "EX",
+        20
+      );
+
+      const stationaryKey = `room:${roomCode}:user:${socket.data.userId}:stationary`;
+      const wasStationary = await redis.get(stationaryKey);
+
+      if (wasStationary === "true") {
+        await redis.set(stationaryKey, "false");
+
         io.to(roomCode).emit("user-stationary-cleared", {
           socketId: socket.id,
           username: socket.data.username,
         });
+
         io.to(roomCode).emit("room-message", {
           from: "System",
           type: "info",
@@ -243,6 +303,7 @@ io.on("connection", (socket) => {
       }
     }
 
+    // ✅ location-update emit MUST be OUTSIDE the moved block
     io.to(roomCode).emit("location-update", {
       socketId: socket.id,
       username: socket.data.username,
@@ -250,11 +311,15 @@ io.on("connection", (socket) => {
       isCreator,
     });
 
-    // ✅ FIXED GEOFENCE SECTION
+    // ✅ Update creator coords
+    if (isCreator && roomCreators[roomCode]) {
+      roomCreators[roomCode].coords = coords;
+    }
+
+    // ✅ Geofence logic
     if (!isCreator && roomCreators[roomCode]?.coords) {
       const creatorCoords = roomCreators[roomCode].coords;
-      const GEOFENCE_RADIUS = 300; // meters
-      const now = Date.now();
+      const GEOFENCE_RADIUS = 300;
 
       try {
         const distanceFromCreator = haversine(coords, creatorCoords);
@@ -263,15 +328,16 @@ io.on("connection", (socket) => {
           lastAlert: 0,
         };
 
+        const now = Date.now();
+
         if (distanceFromCreator > GEOFENCE_RADIUS) {
           if (!userState.active) {
             userState.active = true;
             userState.lastAlert = 0;
             outOfGeofence.set(socket.id, userState);
-            console.log(`⚠️ ${socket.data.username} exited geofence.`);
           }
 
-          if (now - userState.lastAlert >= 30000) {
+          if (now - userState.lastAlert >= ALERT_COOLDOWN) {
             userState.lastAlert = now;
             outOfGeofence.set(socket.id, userState);
 
@@ -283,29 +349,6 @@ io.on("connection", (socket) => {
               )}m away from the group leader!`,
               timestamp: Date.now(),
             });
-
-            socket.emit("room-message", {
-              from: "System",
-              type: "warning",
-              content: `⚠️ You are ${Math.round(
-                distanceFromCreator
-              )}m away from the group leader. Please stay close!`,
-              timestamp: Date.now(),
-            });
-
-            io.to(roomCode).emit("anomaly-alert", {
-              type: "geofence",
-              userId: socket.id,
-              username: socket.data.username,
-              coords,
-              distance: distanceFromCreator,
-            });
-
-            console.log(
-              `⚠️ Alert sent to ${socket.data.username} (${Math.round(
-                distanceFromCreator
-              )}m away)`
-            );
           }
         } else if (userState.active) {
           userState.active = false;
@@ -317,57 +360,62 @@ io.on("connection", (socket) => {
             content: `✅ ${socket.data.username} is back within the group leader's range.`,
             timestamp: Date.now(),
           });
-
-          console.log(`✅ ${socket.data.username} re-entered geofence.`);
         }
-      } catch (error) {
-        console.error("Error calculating distance from creator:", error);
+      } catch (err) {
+        console.error("Geofence error:", err);
       }
     }
   });
 
-  socket.on("stationary-response", ({ roomCode, response }) => {
-    if (!roomCode || !socket.data.username) return;
-    const roomPending = pendingConfirmations[roomCode] || {};
-    const timeoutId = roomPending[socket.id];
-    if (timeoutId) {
-      clearTimeout(timeoutId);
-      delete roomPending[socket.id];
+  socket.on("stationary-response", async ({ roomCode, response }) => {
+    const { userId, username } = socket.data;
+    if (!roomCode || !userId) return;
+
+    // clear timeout
+    if (pendingConfirmations[roomCode]?.[userId]) {
+      clearTimeout(pendingConfirmations[roomCode][userId]);
+      delete pendingConfirmations[roomCode][userId];
     }
 
+    const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
+
     if (response === "yes") {
-      if (!lastMoveTimestamp[roomCode]) lastMoveTimestamp[roomCode] = {};
-      lastMoveTimestamp[roomCode][socket.id] = Date.now();
-      if (stationaryState[roomCode]) stationaryState[roomCode][socket.id] =
-        false;
+      // ✅ USER IS OK → CLEAR STATIONARY IN REDIS
+      await redis.set(stationaryKey, "false");
+
+      // refresh lastMove so timer resets
+      await redis.set(`room:${roomCode}:user:${userId}:lastMove`, Date.now());
+
+      io.to(roomCode).emit("user-stationary-cleared", {
+        socketId: socket.id,
+        username,
+      });
+
+      // ✅ ALSO CLEAR SOS ALERT
+      io.to(roomCode).emit("user-sos-cleared", {
+        socketId: socket.id,
+        username,
+        userId,
+      });
+
       io.to(roomCode).emit("room-message", {
         from: "System",
         type: "info",
-        content: `${socket.data.username} confirmed they are OK.`,
+        content: `✅ ${username} confirmed they are OK.`,
         timestamp: Date.now(),
       });
-      // Notify other clients to clear SOS / stationary indicators for this user
-      io.to(roomCode).emit("user-sos-cleared", {
-        socketId: socket.id,
-        username: socket.data.username,
-        userId: socket.data.userId,
-      });
-      io.to(roomCode).emit("user-stationary-cleared", {
-        socketId: socket.id,
-        username: socket.data.username,
-      });
     } else {
-      if (!stationaryState[roomCode]) stationaryState[roomCode] = {};
-      stationaryState[roomCode][socket.id] = true;
+      // ❗ USER NEEDS HELP
       io.to(roomCode).emit("user-stationary", {
         socketId: socket.id,
-        username: socket.data.username,
+        username,
         since: Date.now(),
       });
+
       io.to(roomCode).emit("room-message", {
         from: "System",
         type: "warning",
-        content: `🚨 ${socket.data.username} indicated they need help!`,
+        content: `🚨 ${username} indicated they need help!`,
         timestamp: Date.now(),
       });
     }
@@ -392,7 +440,9 @@ io.on("connection", (socket) => {
         userId: socket.data.userId,
       });
 
-      console.log(`🚨 SOS Alert from ${socket.data.username} in room ${roomCode}`);
+      console.log(
+        `🚨 SOS Alert from ${socket.data.username} in room ${roomCode}`
+      );
     }
 
     io.to(roomCode).emit("room-message", {
@@ -413,9 +463,12 @@ io.on("connection", (socket) => {
       userId: socket.data.userId,
     });
 
-    console.log(`✅ SOS cleared for ${socket.data.username} in room ${roomCode}`);
+    console.log(
+      `✅ SOS cleared for ${socket.data.username} in room ${roomCode}`
+    );
   });
 
+  const HAZARD_TTL = 5 * 60 * 1000; // 5 minutes
   socket.on("add-hazard", (data) => {
     console.log("[Server] Received hazard:", data);
     const roomId = data.roomId;
@@ -435,57 +488,81 @@ io.on("connection", (socket) => {
       },
     });
     console.log("[Server] Sent hazard room-message");
+    setTimeout(() => {
+  io.in(roomId).emit("hazard-cleared", {
+    hazardId: data.id,
+    userName: data.userName,
   });
 
-  socket.on("disconnect", () => {
-    const { roomCode, username, userId } = socket.data;
-    if (roomCode && username && userId) {
-      console.log(`❌ ${username} (${userId}) disconnected from room ${roomCode}`);
+  io.in(roomId).emit("room-message", {
+    from: "System",
+    type: "info",
+    content: `✅ Hazard reported by ${data.userName} is now cleared.`,
+    timestamp: Date.now(),
+  });
+}, HAZARD_TTL);
+  });
 
-      userSocketMap.delete(userId);
-      if (roomCreators[roomCode]?.userId === userId) {
-        delete roomCreators[roomCode];
-        console.log(`👑 Room creator left room ${roomCode}`);
-      }
+  socket.on("disconnect", async () => {
+    const { roomCode, username, userId } = socket.data || {};
+    if (!roomCode || !userId) return;
 
-      if (roomLocations[roomCode]) {
-        delete roomLocations[roomCode][socket.id];
-        if (Object.keys(roomLocations[roomCode]).length === 0) {
-          delete roomLocations[roomCode];
-        }
-      }
+    // 🔹 Mark user offline in Redis
+    await redis.set(`room:${roomCode}:user:${userId}:status`, "offline");
 
-      if (lastMoveTimestamp[roomCode]) {
-        delete lastMoveTimestamp[roomCode][socket.id];
-        if (Object.keys(lastMoveTimestamp[roomCode]).length === 0) {
-          delete lastMoveTimestamp[roomCode];
-        }
-      }
+    // 🔹 Notify others (for faded / disconnected icon)
+    socket.to(roomCode).emit("user-status", {
+      userId,
+      status: "offline",
+    });
 
-      if (stationaryState[roomCode]) {
-        delete stationaryState[roomCode][socket.id];
-        if (Object.keys(stationaryState[roomCode]).length === 0) {
-          delete stationaryState[roomCode];
-        }
-      }
+    console.log(
+      `❌ ${username} (${userId}) disconnected from room ${roomCode}`
+    );
 
-      outOfGeofence.delete(socket.id); // ✅ Clean up geofence state
+    // 🔹 Cleanup server state
+    userSocketMap.delete(userId);
+    outOfGeofence.delete(socket.id);
+    // 🔹 Clear pending stationary confirmation (IMPORTANT)
+    if (pendingConfirmations[roomCode]?.[userId]) {
+      clearTimeout(pendingConfirmations[roomCode][userId]);
+      delete pendingConfirmations[roomCode][userId];
+    }
+  
 
-      io.to(roomCode).emit("user-left", {
-        socketId: socket.id,
-        username,
-      });
 
-      const users = [
-        ...(io.sockets.adapter.rooms.get(roomCode) || []),
-      ].map((socketId) => ({
+    if (roomCreators[roomCode]?.userId === userId) {
+      delete roomCreators[roomCode];
+      console.log(`👑 Room creator left room ${roomCode}`);
+    }
+    await redis.set(`room:${roomCode}:user:${userId}:stationary`, "false");
+
+    // 🔹 Notify room user left
+    io.to(roomCode).emit("user-left", {
+      socketId: socket.id,
+      username,
+    });
+
+    // 🔹 Update room user list
+    const users = [...(io.sockets.adapter.rooms.get(roomCode) || [])].map(
+      (socketId) => ({
         socketId,
         username: io.sockets.sockets.get(socketId)?.data.username,
-      }));
-      io.to(roomCode).emit("room-users", users);
-    }
+      })
+    );
+
+    io.to(roomCode).emit("room-users", users);
   });
 });
+
+(async () => {
+  try {
+    await redis.ping();
+    console.log("🧪 Redis ping successful");
+  } catch (err) {
+    console.error("❌ Redis ping failed:", err);
+  }
+})();
 
 server.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);

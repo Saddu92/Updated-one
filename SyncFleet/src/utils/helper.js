@@ -24,8 +24,35 @@ export const cn = (...classes) => classes.filter(Boolean).join(" ");
 
 // Utility to check if point is outside geofence
 export const isOutsideGeofence = (point, fence) => {
-  if (!fence.center || !point) return false;
-//   const haversine = require("haversine-distance");
-  const distance = haversine(point, fence.center);
-  return distance > fence.radius;
+  // ✅ Must have valid geofence center and radius
+  if (!fence?.center || !fence?.radius || fence.radius <= 0) {
+    return false; // If no geofence set, don't show as outside
+  }
+  
+  if (!point) return false;
+  
+  // ✅ Ensure coordinates are in the right format
+  const center = fence.center;
+  const lat1 = point.lat !== undefined ? point.lat : point.latitude;
+  const lng1 = point.lng !== undefined ? point.lng : point.longitude;
+  const lat2 = center.lat !== undefined ? center.lat : center.latitude;
+  const lng2 = center.lng !== undefined ? center.lng : center.longitude;
+  
+  // ✅ If coordinates are missing, can't determine geofence
+  if (lat1 === undefined || lng1 === undefined || lat2 === undefined || lng2 === undefined) {
+    return false;
+  }
+  
+  try {
+    const distance = haversine(
+      { lat: lat1, lng: lng1 },
+      { lat: lat2, lng: lng2 }
+    );
+    // Return true only if distance is greater than radius
+    const isOutside = distance > fence.radius;
+    return isOutside;
+  } catch (err) {
+    console.warn("Error calculating distance for geofence:", err);
+    return false;
+  }
 };

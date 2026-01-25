@@ -83,6 +83,7 @@ const MapDisplay = ({
             : "normal"
         }
         batteryLevel={userLocations[mySocketId]?.battery?.level}
+         networkStatus={userLocations[mySocketId]?.networkStatus}
       />
 
       {/* Other Users */}
@@ -95,15 +96,16 @@ const MapDisplay = ({
           if (!isActive) return null;
 
           // ✅ Check if this user is outside geofence
-          const outside = isOutsideGeofence(u.coords, geofence);
+          // Only check if geofence has a valid center
+          const outside = geofence?.center ? isOutsideGeofence(u.coords, geofence) : false;
           const deviationDistance = calculateDeviation(u.coords);
           const isCreator = id === creatorSocketId;
 
           let markerType = null;
           if (u.isStationary) markerType = "stationary";
           else if (u.isSOS) markerType = "sos";
-          // ✅ Only non-creators can be "outside" or "far"
-          else if (!isCreator && outside) markerType = "outside";
+          // ✅ Only non-creators can be "outside" - and only if geofence is active
+          else if (!isCreator && geofence?.center && outside) markerType = "outside";
           else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD) markerType = "far";
           else markerType = "normal";
 
@@ -116,6 +118,9 @@ const MapDisplay = ({
                 markerType={u.isSOS ? "sos" : markerType}
                 deviationDistance={deviationDistance}
                 batteryLevel={u.battery?.level}
+                networkStatus={u.networkStatus}
+
+               
               />
 
               {/* Trail */}

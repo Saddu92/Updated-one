@@ -128,7 +128,7 @@ const RoomMap = ({ room }) => {
   // UI states
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState("");
-  const [chatOpen, setChatOpen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
   const [trailDuration, setTrailDuration] = useState(DEFAULT_TRAIL_DURATION);
@@ -612,184 +612,263 @@ const RoomMap = ({ room }) => {
     );
   }
 
-  return (
-    <ErrorBoundary>
-      <div className="relative min-h-screen w-full overflow-hidden bg-gradient-to-br from-white via-sky-50 to-sky-100 text-gray-800">
-        {/* Toast */}
-        <Toast message={toast?.message} type={toast?.type} />
+ return (
+  <ErrorBoundary>
+    {/* ROOT: full viewport */}
+    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-white via-sky-50 to-sky-100 text-gray-800">
 
-        {/* Stationary Modal */}
-        <StationaryModal
-          isOpen={showStationaryPrompt}
-          onYes={handleStationaryYes}
-          onNo={handleStationaryNo}
-        />
+      {/* Toast */}
+      <Toast message={toast?.message} type={toast?.type} />
 
-        <div className="flex flex-col md:flex-row h-auto md:h-screen bg-transparent p-4 md:p-6 gap-4 md:gap-6">
-          {/* Map Section */}
-          <div className="w-full md:w-4/5 h-full">
-            <div className="h-full w-full rounded-2xl shadow-lg border border-gray-200 overflow-hidden bg-white/80 relative">
-              {/* Connection Status */}
-              <div className="absolute top-4 left-4 z-[9999] flex items-center bg-white/70 px-3 py-1 rounded-full shadow-sm border">
-                <div
-                  className={`w-3 h-3 rounded-full mr-2 ${
-                    socket.connected ? "bg-green-600" : "bg-red-500"
-                  }`}
-                />
-                <span className="text-sm text-gray-700">
-                  {socket.connected ? "Connected" : "Disconnected"}
-                  {isConnecting && " (Connecting...)"}
-                </span>
-              </div>
+      {/* Stationary Modal */}
+      <StationaryModal
+        isOpen={showStationaryPrompt}
+        onYes={handleStationaryYes}
+        onNo={handleStationaryNo}
+      />
 
-              <MapDisplay
-                coords={coords}
-                mapRef={mapRef}
-                userLocations={userLocations}
-                mySocketId={mySocketId}
-                getUserColor={getUserColor}
-                geofence={geofence}
-                groupCenter={null}
-                visibleHazards={visibleHazards}
-                sourceCoords={sourceCoords}
-                destinationCoords={destinationCoords}
-                user={user}
-                shouldRecenter={shouldRecenter}
-                isRoomCreator={isRoomCreator}
-                creatorSocketId={creatorSocketId}
-              />
-
-              {/* SOS Button */}
-              <SOSButton
-                onClick={() => {
-                  playAlertSound();
-                  emitSOS();
-                }}
-              />
-            </div>
-          </div>
-
-         
-        </div>
-
-        {/* Top Right Buttons */}
-<div className="absolute top-4 right-4 z-[9999] flex flex-col items-end gap-2">
-          {/* Main Buttons */}
-          <div className="flex items-center gap-2">
-            {/* Recenter */}
-            {/* (desktop inline chat removed from toolbar to avoid duplication) */}
-            <button
-              onClick={handleRecenter}
-              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-              title="Recenter map"
-            >
-              <IoLocationSharp className="text-sky-600 text-xl group-hover:scale-110 transition-transform duration-200" />
-            </button>
-
-            {/* Chat */}
-            <button
-              onClick={() => setChatOpen(!chatOpen)}
-              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-              title="Toggle chat"
-            >
-              <FiMessageSquare className="text-sky-600 text-xl group-hover:scale-110 transition-transform duration-200" />
-              {messages.length > 0 && (
-                <span className="absolute -top-1.5 -right-1.5 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow">
-                  {messages.length}
-                </span>
-              )}
-            </button>
-
-            {/* Users */}
-            <button
-              onClick={() => setPanelOpen(!panelOpen)}
-              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-all duration-200"
-              title="Toggle panel"
-            >
-              <FiUsers className="text-emerald-600 text-xl group-hover:scale-110 transition-transform duration-200" />
-              <span className="absolute -top-1.5 -right-1.5 bg-emerald-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center shadow">
-                {activeUserCount}
-              </span>
-            </button>
-
-            {/* Leave Room */}
-            <button
-              onClick={handleLeaveRoom}
-              className="group relative p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 hover:shadow-md transition-all duration-200"
-              title="Leave room"
-            >
-              <IoExitOutline className="text-red-600 text-xl group-hover:scale-110 transition-transform duration-200" />
-            </button>
-          </div>
-
-          {/* Hazard Buttons */}
-          <div className="flex items-center gap-2 ml-2">
-            <button
-              onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
-              className="group relative flex items-center justify-center gap-2 p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-red-50 transition-all duration-200"
-              title="Mark Pothole"
-            >
-              <GiRoad className="text-red-600 text-xl" />
-              <span className="text-red-600 font-semibold text-sm">
-                Pothole
-              </span>
-            </button>
-
-            <button
-              onClick={() => addHazard("Accident", coords.lat, coords.lng)}
-              className="group relative flex items-center justify-center gap-2 p-2 md:p-3 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-yellow-50 transition-all duration-200"
-              title="Mark Accident"
-            >
-              <MdOutlineWarning className="text-amber-600 text-xl" />
-              <span className="text-amber-600 font-semibold text-sm">
-                Accident
-              </span>
-            </button>
-            
-          </div>
-          {/* Chat box below buttons (desktop) */}
-{chatOpen && (
-  <div className="hidden md:block mt-40 w-[300px] h-[420px]">
-    <ChatPanel
-      isOpen={true}
-      onClose={() => setChatOpen(false)}
-      messages={messages}
-      newMessage={newMessage}
-      setNewMessage={setNewMessage}
-      onSend={handleSendMessage}
-      currentUser={user?.name}
-      inline={true}
-      className="h-full"
-    />
-  </div>
-)}
-
-        </div>
-        
-
-        {/* Users Panel */}
-        <UsersPanel
-          isOpen={panelOpen}
-          onClose={() => setPanelOpen(false)}
-          activeUsers={activeUsers}
+      {/* ================= MAP (FULLSCREEN) ================= */}
+      <div className="absolute inset-0">
+        <MapDisplay
+          coords={coords}
+          mapRef={mapRef}
           userLocations={userLocations}
           mySocketId={mySocketId}
           getUserColor={getUserColor}
           geofence={geofence}
-          trailDuration={trailDuration}
-          setTrailDuration={setTrailDuration}
-          geofenceRadius={geofence.radius}
-          setGeofenceRadius={(radius) =>
-            setGeofence((prev) => ({ ...prev, radius }))
-          }
+          groupCenter={null}
+          visibleHazards={visibleHazards}
+          sourceCoords={sourceCoords}
+          destinationCoords={destinationCoords}
+          user={user}
+          shouldRecenter={shouldRecenter}
+          isRoomCreator={isRoomCreator}
           creatorSocketId={creatorSocketId}
         />
 
-        {/* Chat Panel (floating) - only show on small screens; desktop uses right-column inline chat */}
-        <div className="md:hidden">
+        {/* Connection Status - Mobile */}
+        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[9999] flex items-center bg-white/95 px-2 md:px-3 py-1 rounded-full shadow border text-xs md:text-sm">
+          <div
+            className={`w-2 md:w-3 h-2 md:h-3 rounded-full mr-2 ${
+              socket.connected ? "bg-green-600" : "bg-red-500"
+            }`}
+          />
+          <span className="font-medium text-gray-700">
+            {socket.connected ? "Online" : "Offline"}
+          </span>
+        </div>
+
+        {/* SOS Button - Desktop */}
+        <div className="hidden md:block">
+          <SOSButton
+            onClick={() => {
+              playAlertSound();
+              emitSOS();
+            }}
+          />
+        </div>
+      </div>
+
+      {/* ================= DESKTOP CONTROLS (MD+) ================= */}
+      <div className="hidden md:flex absolute top-4 right-4 z-[9999] flex-col items-center gap-2">
+        {/* Recenter */}
+        <button
+          onClick={handleRecenter}
+          className="p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 hover:shadow-md transition"
+          title="Recenter map"
+        >
+          <IoLocationSharp className="text-sky-600 text-xl" />
+        </button>
+
+        {/* Chat */}
+        <button
+          onClick={() => setChatOpen(!chatOpen)}
+          className="relative p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-sky-50 hover:shadow-md transition"
+          title="Open chat"
+        >
+          <FiMessageSquare className="text-sky-600 text-xl" />
+          {messages.length > 0 && (
+            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center">
+              {messages.length}
+            </span>
+          )}
+        </button>
+
+        {/* Users */}
+        <button
+          onClick={() => setPanelOpen(!panelOpen)}
+          className="relative p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-emerald-50 hover:shadow-md transition"
+          title="View users"
+        >
+          <FiUsers className="text-emerald-600 text-xl" />
+          <span className="absolute -top-1 -right-1 bg-emerald-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center">
+            {activeUserCount}
+          </span>
+        </button>
+
+        {/* Hazards Section */}
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
+            className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-lg shadow hover:bg-red-50 hover:shadow-md transition"
+            title="Report pothole"
+          >
+            <GiRoad className="text-red-600 text-lg" />
+            <span className="text-red-600 font-semibold text-xs">Pothole</span>
+          </button>
+
+          <button
+            onClick={() => addHazard("Accident", coords.lat, coords.lng)}
+            className="flex items-center gap-2 p-2.5 bg-white border border-gray-200 rounded-lg shadow hover:bg-yellow-50 hover:shadow-md transition"
+            title="Report accident"
+          >
+            <MdOutlineWarning className="text-amber-600 text-lg" />
+            <span className="text-amber-600 font-semibold text-xs">Accident</span>
+          </button>
+        </div>
+
+        {/* Leave */}
+        <button
+          onClick={handleLeaveRoom}
+          className="p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-red-50 hover:shadow-md transition mt-2"
+          title="Leave room"
+        >
+          <IoExitOutline className="text-red-600 text-xl" />
+        </button>
+      </div>
+
+      {/* ================= MOBILE BOTTOM ACTION BAR ================= */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-[9998] bg-white/95 backdrop-blur border-t border-gray-200 shadow-lg">
+        <div className="flex items-center justify-around px-2 py-3">
+          {/* Recenter */}
+          <button
+            onClick={handleRecenter}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px]"
+            title="Recenter"
+          >
+            <IoLocationSharp className="text-sky-600 text-2xl" />
+            <span className="text-xs font-medium text-gray-700">Map</span>
+          </button>
+
+          {/* Chat */}
+          <button
+            onClick={() => setChatOpen(!chatOpen)}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px] relative"
+            title="Chat"
+          >
+            <div className="relative">
+              <FiMessageSquare className="text-sky-600 text-2xl" />
+              {messages.length > 0 && (
+                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                  {messages.length > 9 ? '9+' : messages.length}
+                </span>
+              )}
+            </div>
+            <span className="text-xs font-medium text-gray-700">Chat</span>
+          </button>
+
+          {/* Users */}
+          <button
+            onClick={() => setPanelOpen(!panelOpen)}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px] relative"
+            title="Users"
+          >
+            <div className="relative">
+              <FiUsers className="text-emerald-600 text-2xl" />
+              <span className="absolute -top-2 -right-2 bg-emerald-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                {activeUserCount}
+              </span>
+            </div>
+            <span className="text-xs font-medium text-gray-700">Users</span>
+          </button>
+
+          {/* Hazard Dropdown */}
+          <div className="relative group">
+            <button
+              className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px]"
+              title="Report hazard"
+            >
+              <MdOutlineWarning className="text-amber-600 text-2xl" />
+              <span className="text-xs font-medium text-gray-700">Alert</span>
+            </button>
+            <div className="absolute bottom-full mb-2 right-0 hidden group-hover:flex flex-col gap-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 min-w-[140px]">
+              <button
+                onClick={() => addHazard("Pothole", coords.lat, coords.lng)}
+                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-red-50 text-left transition"
+              >
+                <GiRoad className="text-red-600 text-lg" />
+                <span className="text-sm font-medium text-red-600">Pothole</span>
+              </button>
+              <button
+                onClick={() => addHazard("Accident", coords.lat, coords.lng)}
+                className="flex items-center gap-2 px-3 py-2 rounded hover:bg-yellow-50 text-left transition"
+              >
+                <MdOutlineWarning className="text-amber-600 text-lg" />
+                <span className="text-sm font-medium text-amber-600">Accident</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Leave */}
+          <button
+            onClick={handleLeaveRoom}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px]"
+            title="Leave"
+          >
+            <IoExitOutline className="text-red-600 text-2xl" />
+            <span className="text-xs font-medium text-gray-700">Leave</span>
+          </button>
+        </div>
+      </div>
+
+      {/* ================= SOS BUTTON (MOBILE) ================= */}
+      <div className="md:hidden fixed bottom-20 right-4 z-[9997]">
+        <SOSButton
+          onClick={() => {
+            playAlertSound();
+            emitSOS();
+          }}
+        />
+      </div>
+
+      {/* ================= USERS PANEL ================= */}
+      <UsersPanel
+        isOpen={panelOpen}
+        onClose={() => setPanelOpen(false)}
+        activeUsers={activeUsers}
+        userLocations={userLocations}
+        mySocketId={mySocketId}
+        getUserColor={getUserColor}
+        geofence={geofence}
+        trailDuration={trailDuration}
+        setTrailDuration={setTrailDuration}
+        geofenceRadius={geofence.radius}
+        setGeofenceRadius={(radius) =>
+          setGeofence((prev) => ({ ...prev, radius }))
+        }
+        creatorSocketId={creatorSocketId}
+      />
+
+      {/* ================= CHAT ================= */}
+      {/* Mobile Chat - Full Screen Modal */}
+      <div className="md:hidden">
+        <ChatPanel
+          isOpen={chatOpen}
+          onClose={() => setChatOpen(false)}
+          messages={messages}
+          newMessage={newMessage}
+          setNewMessage={setNewMessage}
+          onSend={handleSendMessage}
+          currentUser={user?.name}
+        />
+      </div>
+
+      {/* Desktop Chat - Floating Window */}
+      {chatOpen && (
+        <div className="hidden md:block fixed right-4 top-32 z-[9999] w-[340px] h-[500px] shadow-2xl rounded-xl overflow-hidden">
           <ChatPanel
-            isOpen={chatOpen}
-            onClose={() => setChatOpen(false)}
+            isOpen
+            inline
             messages={messages}
             newMessage={newMessage}
             setNewMessage={setNewMessage}
@@ -797,22 +876,24 @@ const RoomMap = ({ room }) => {
             currentUser={user?.name}
           />
         </div>
+      )}
 
-        {/* Leave Room Modal */}
-        <LeaveRoomModal
-          isOpen={showLeaveModal}
-          onCancel={() => setShowLeaveModal(false)}
-          onConfirm={() => {
-            if (socket.connected) {
-              socket.emit("leave-room", { roomCode, userId: user.id });
-              disconnectSocket();
-            }
-            window.location.href = "/";
-          }}
-        />
-      </div>
-    </ErrorBoundary>
-  );
+      {/* Leave Room Modal */}
+      <LeaveRoomModal
+        isOpen={showLeaveModal}
+        onCancel={() => setShowLeaveModal(false)}
+        onConfirm={() => {
+          if (socket.connected) {
+            socket.emit("leave-room", { roomCode, userId: user.id });
+            disconnectSocket();
+          }
+          window.location.href = "/";
+        }}
+      />
+    </div>
+  </ErrorBoundary>
+);
+
 };
 
 export default RoomMap;
