@@ -2,14 +2,16 @@
 import { useEffect, useRef, useState } from "react";
 import { GEOLOCATION_TIMEOUT } from "../utils/helper.js";
 
-export const useGeoWatcher = ({ isUserReady, user, onPositionUpdate }) => {
+export const useGeoWatcher = ({ enabled = true, user, onPositionUpdate }) => {
+
   const [coords, setCoords] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const geolocationWatchId = useRef(null);
   const timeoutIdRef = useRef(null);
 
   useEffect(() => {
-    if (!isUserReady || !user) return;
+   if (!enabled) return;
+
 
     const handleSuccess = (position) => {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
@@ -19,7 +21,10 @@ export const useGeoWatcher = ({ isUserReady, user, onPositionUpdate }) => {
       };
       setCoords(coords);
       setLocationError(null); // ✅ Clear any previous errors
-      if (onPositionUpdate) onPositionUpdate(coords);
+      if (user && onPositionUpdate) {
+  onPositionUpdate(coords);
+}
+
     };
 
     const handleError = (error) => {
@@ -46,7 +51,8 @@ export const useGeoWatcher = ({ isUserReady, user, onPositionUpdate }) => {
 
     // ✅ Shorter timeout - 15 seconds instead of relying on GEOLOCATION_TIMEOUT
     timeoutIdRef.current = setTimeout(() => {
-      handleError({ code: 3, TIMEOUT: 3 }); // TIMEOUT error code
+      handleError({ code: 3 });
+; // TIMEOUT error code
     }, 15000);
 
     if (navigator.geolocation) {
@@ -69,7 +75,7 @@ export const useGeoWatcher = ({ isUserReady, user, onPositionUpdate }) => {
         navigator.geolocation.clearWatch(geolocationWatchId.current);
       }
     };
-  }, [isUserReady, user, onPositionUpdate]);
+  }, [enabled, user, onPositionUpdate]);
 
   return { coords, locationError };
 };

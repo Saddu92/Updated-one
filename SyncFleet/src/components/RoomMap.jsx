@@ -123,7 +123,7 @@ const RoomMap = ({ room }) => {
 
   // User states
   const [user, setUser] = useState(null);
-  const [isUserReady, setIsUserReady] = useState(false);
+
 
   // UI states
   const [messages, setMessages] = useState([]);
@@ -134,7 +134,7 @@ const RoomMap = ({ room }) => {
   const [trailDuration, setTrailDuration] = useState(DEFAULT_TRAIL_DURATION);
   const [geofence, setGeofence] = useState({
     center: null,
-    radius: 300,
+    radius: 0,
   });
   const [currentRoom, setCurrentRoom] = useState(null);
   const [sourceCoords, setSourceCoords] = useState(null);
@@ -165,7 +165,7 @@ const RoomMap = ({ room }) => {
 
   // Custom hooks
   const { coords, locationError } = useGeoWatcher({
-    isUserReady,
+    enabled:true,
     user,
     onPositionUpdate: (newCoords) => {
       if (!user?.id || !user?.name || !socket.connected) return;
@@ -201,7 +201,7 @@ const RoomMap = ({ room }) => {
   } = useRoomSocket({
     roomCode,
     user,
-    isUserReady,
+    isUserReady: Boolean(user),
     trailExpiryMs,
     showToast,
     playAlertSound,
@@ -336,7 +336,7 @@ const RoomMap = ({ room }) => {
       }
     };
     loadUser();
-    setIsUserReady(true);
+    
   }, [roomCode, authUser]);
 
   // Fetch room data
@@ -568,22 +568,22 @@ const RoomMap = ({ room }) => {
   }, [coords, checkStationary]);
 
   // Loading states
-  if (!isUserReady) {
+  if (!user) {
     return (
       <div className="flex items-center justify-center h-screen">
         <p className="text-gray-500 text-lg">Loading user data...</p>
       </div>
     );
   }
-  if (!user) {
-    return (
-      <div className="flex items-center justify-center h-screen">
-        <p className="text-red-500 text-lg">
-          Failed to load user data. Please login again.
-        </p>
-      </div>
-    );
-  }
+  // if (!user) {
+  //   return (
+  //     <div className="flex items-center justify-center h-screen">
+  //       <p className="text-red-500 text-lg">
+  //         Failed to load user data. Please login again.
+  //       </p>
+  //     </div>
+  //   );
+  // }
   if (locationError) {
     return (
       <div className="flex items-center justify-center h-screen">
