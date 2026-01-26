@@ -5,7 +5,7 @@ import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
 import haversine from "haversine-distance";
 import { createGroupCenterIcon } from "../utils/iconHelpers.js";
-import { DEVIATION_THRESHOLD, INACTIVE_THRESHOLD, isOutsideGeofence } from "../utils/helper.js";
+import { DEVIATION_THRESHOLD, INACTIVE_THRESHOLD,  } from "../utils/helper.js";
 import RecenterMap from "./RecenterMap.jsx";
 import GeofenceCircle from "./GeofenceCircle.jsx";
 import UserMarker from "./UserMarker.jsx";
@@ -20,6 +20,7 @@ const MapDisplay = ({
   mySocketId,
   getUserColor,
   geofence,
+  alertUsers={},
   groupCenter,
   visibleHazards,
   sourceCoords,
@@ -68,20 +69,21 @@ const MapDisplay = ({
       <UserMarker
         username={isRoomCreator ? "You (Creator)" : "You"}
         coords={coords}
-        color={
-          userLocations[mySocketId]?.isStationary
-            ? "#ef4444"
-            : isOutsideGeofence(coords, geofence) && !isRoomCreator
-            ? "#f59e0b"
-            : getUserColor(mySocketId)
-        }
-        markerType={
-          userLocations[mySocketId]?.isStationary
-            ? "stationary"
-            : isOutsideGeofence(coords, geofence) && !isRoomCreator
-            ? "outside"
-            : "normal"
-        }
+       color={
+  userLocations[mySocketId]?.isStationary
+    ? "#ef4444"
+    : alertUsers[mySocketId] && !isRoomCreator
+    ? "#f59e0b"
+    : getUserColor(mySocketId)
+}
+markerType={
+  userLocations[mySocketId]?.isStationary
+    ? "stationary"
+    : alertUsers[mySocketId] && !isRoomCreator
+    ? "outside"
+    : "normal"
+}
+
         batteryLevel={userLocations[mySocketId]?.battery?.level}
          networkStatus={userLocations[mySocketId]?.networkStatus}
       />
@@ -95,9 +97,8 @@ const MapDisplay = ({
           const isActive = now - u.lastSeen < INACTIVE_THRESHOLD;
           if (!isActive) return null;
 
-          // ✅ Check if this user is outside geofence
-          // Only check if geofence has a valid center
-          const outside = geofence?.center ? isOutsideGeofence(u.coords, geofence) : false;
+          
+
           const deviationDistance = calculateDeviation(u.coords);
           const isCreator = id === creatorSocketId;
 
@@ -105,7 +106,7 @@ const MapDisplay = ({
           if (u.isStationary) markerType = "stationary";
           else if (u.isSOS) markerType = "sos";
           // ✅ Only non-creators can be "outside" - and only if geofence is active
-          else if (!isCreator && geofence?.center && outside) markerType = "outside";
+          else if (!isCreator && alertUsers[id])markerType = "outside";
           else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD) markerType = "far";
           else markerType = "normal";
 

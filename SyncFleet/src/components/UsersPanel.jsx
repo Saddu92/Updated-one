@@ -60,7 +60,7 @@ const UsersPanel = ({
                 />
                 <div className="flex flex-col truncate">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-white">
+                    <span className="truncate text-sm font-medium text-blue-500">
                       {user.username}
                       {user.socketId === mySocketId && " (You)"}
                     </span>
@@ -73,7 +73,7 @@ const UsersPanel = ({
                   </div>
                   {/* ✅ Show distance from creator for non-creators */}
                   {!isCreator && geofence.center && location.coords && (
-                    <span className="text-xs text-gray-500">
+                    <span className="text-xs text-black-500">
                       {Math.round(
                         haversine(location.coords, geofence.center)
                       )}m from leader

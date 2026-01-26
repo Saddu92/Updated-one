@@ -1,8 +1,11 @@
 // hooks/useRoomSocket.js
 import { useEffect, useRef, useState } from "react";
 import { getSocket } from "../utils/socket.js";
-import { SOS_DURATION, INACTIVE_THRESHOLD, PATH_HISTORY_LIMIT } from "../utils/helper.js";
-
+import {
+  SOS_DURATION,
+  INACTIVE_THRESHOLD,
+  PATH_HISTORY_LIMIT,
+} from "../utils/helper.js";
 
 export const useRoomSocket = ({
   roomCode,
@@ -23,7 +26,8 @@ export const useRoomSocket = ({
   const [isConnecting, setIsConnecting] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
   const [userLocations, setUserLocations] = useState({});
-  const [alertUsers, setAlertUsers] = useState(new Set());
+  const [alertUsers, setAlertUsers] = useState({});
+
   const [userTrails, setUserTrails] = useState({});
   const [creatorSocketId, setCreatorSocketId] = useState(null); // ✅ NEW
 
@@ -73,23 +77,25 @@ export const useRoomSocket = ({
       } catch (e) {
         // ignore
       }
-      showToast(`${username} joined the room${isCreator ? ' (Creator)' : ''}`, "info");
+      showToast(
+        `${username} joined the room${isCreator ? " (Creator)" : ""}`,
+        "info",
+      );
       if (onUserJoined) onUserJoined({ username, socketId, isCreator });
     };
 
-const handleUserStatus = ({ userId, status }) => {
-  setUserLocations((prev) => ({
-    ...prev,
-    [userId]: {
-      ...(prev[userId] || {}),
-      networkStatus: status, // "offline"
-    },
-  }));
-};
-
+    const handleUserStatus = ({ userId, status }) => {
+      setUserLocations((prev) => ({
+        ...prev,
+        [userId]: {
+          ...(prev[userId] || {}),
+          networkStatus: status, // "offline"
+        },
+      }));
+    };
 
     const handleUserLeft = ({ socketId }) => {
-       delete lastSeenRef.current[socketId]; 
+      delete lastSeenRef.current[socketId];
       setUserLocations((prev) => {
         const newLocations = { ...prev };
         delete newLocations[socketId];
@@ -101,16 +107,21 @@ const handleUserStatus = ({ userId, status }) => {
         return prev.filter((u) => u.socketId !== socketId);
       });
       setAlertUsers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(socketId);
-        return newSet;
+        const next = { ...prev };
+        delete next[socketId];
+        return next;
       });
       if (onUserLeft) onUserLeft({ socketId });
     };
 
-    const handleLocationUpdate = ({ socketId, username, coords, isCreator }) => {
+    const handleLocationUpdate = ({
+      socketId,
+      username,
+      coords,
+      isCreator,
+    }) => {
       const now = Date.now();
-        lastSeenRef.current[socketId] = now;
+      lastSeenRef.current[socketId] = now;
       setUserLocations((prev) => {
         const existing = prev[socketId] || {};
         const filteredPath = [
@@ -119,7 +130,7 @@ const handleUserStatus = ({ userId, status }) => {
         ]
           .filter((p) => now - p.timestamp <= trailExpiryMs)
           .slice(-PATH_HISTORY_LIMIT);
-        
+
         return {
           ...prev,
           [socketId]: {
@@ -129,7 +140,7 @@ const handleUserStatus = ({ userId, status }) => {
             isCreator: isCreator || false, // ✅ Store creator flag
             lastSeen: now,
             path: filteredPath,
-              networkStatus: "online",
+            networkStatus: "online",
           },
         };
       });
@@ -149,8 +160,18 @@ const handleUserStatus = ({ userId, status }) => {
           .filter((p) => now - p.timestamp <= trailExpiryMs)
           .slice(-PATH_HISTORY_LIMIT),
       }));
-      
-      if (onLocationUpdate) onLocationUpdate({ socketId, username, coords, isCreator });
+
+      if (onLocationUpdate)
+        onLocationUpdate({ socketId, username, coords, isCreator });
+    };
+
+    const handleGeofenceUpdate = ({ userId, socketId, isOutside }) => {
+      setAlertUsers((prev) => {
+        const next = { ...prev };
+        if (isOutside) next[socketId] = true;
+        else delete next[socketId];
+        return next;
+      });
     };
 
     const handleAnomalyAlert = (data) => {
@@ -161,13 +182,13 @@ const handleUserStatus = ({ userId, status }) => {
         type === "sos"
           ? `🚨 SOS triggered by ${username}`
           : `⚠️ ${username} deviated from group`,
-        alertType
+        alertType,
       );
-      setAlertUsers((prev) => {
-        const newSet = new Set(prev);
-        newSet.add(socketId);
-        return newSet;
-      });
+      // setAlertUsers((prev) => {
+      //   const newSet = new Set(prev);
+      //   newSet.add(socketId);
+      //   return newSet;
+      // });
 
       if (type === "sos") {
         setUserLocations((prev) => ({
@@ -182,35 +203,39 @@ const handleUserStatus = ({ userId, status }) => {
         }, SOS_DURATION);
       }
 
-      setTimeout(() => {
-        setAlertUsers((prev) => {
-          const newSet = new Set(prev);
-          newSet.delete(socketId);
-          return newSet;
-        });
-      }, SOS_DURATION);
-
       if (onAnomalyAlert) onAnomalyAlert(data);
     };
-
-    const handleRoomMessage = ({ from, message }) => {
-      if (message.type === "hazard" && from !== socket.id) {
-        showToast(`⚠️ ${message.content}`, "warning");
-      }
-
-      if (message.type === "sos" && from !== socket.id) {
-        playAlertSound();
-        showToast(`🚨 SOS triggered by ${message.sender}`, "danger");
-      }
-
-      if (onRoomMessage) onRoomMessage({ from, message });
+    const handleGeofenceInit = (data) => {
+      setAlertUsers(data || {});
     };
+   const handleRoomMessage = (payload) => {
+  const message = payload.message ?? payload; // ✅ normalize
+
+  if (!message?.type) return; // safety guard
+
+  if (message.type === "hazard" && payload.from !== socket.id) {
+    showToast(`⚠️ ${message.content}`, "warning");
+  }
+
+  if (message.type === "sos" && payload.from !== socket.id) {
+    playAlertSound();
+    showToast(`🚨 SOS triggered by ${message.sender}`, "danger");
+  }
+
+  if (onRoomMessage) {
+    onRoomMessage({
+      from: payload.from,
+      message,
+    });
+  }
+};
+
 
     const handleRoomUsers = (users) => {
       setActiveUsers(users);
-      
+
       // ✅ Find and set creator from user list
-      const creator = users.find(u => u.isCreator);
+      const creator = users.find((u) => u.isCreator);
       if (creator && creator.socketId !== creatorSocketId) {
         setCreatorSocketId(creator.socketId);
         if (onCreatorIdentified) {
@@ -218,7 +243,7 @@ const handleUserStatus = ({ userId, status }) => {
         }
         console.log(`👑 Creator found in user list: ${creator.username}`);
       }
-      
+
       if (onRoomUsers) onRoomUsers(users);
     };
 
@@ -261,9 +286,9 @@ const handleUserStatus = ({ userId, status }) => {
 
       // ✅ REMOVE FROM ALERT USERS SET
       setAlertUsers((prev) => {
-        const newSet = new Set(prev);
-        newSet.delete(socketId);
-        return newSet;
+        const next = { ...prev };
+        delete next[socketId];
+        return next;
       });
 
       if (showToast) showToast(`${username} is OK`, "info");
@@ -278,11 +303,11 @@ const handleUserStatus = ({ userId, status }) => {
           isSOS: true,
         },
       }));
-      
+
       if (playAlertSound) {
         playAlertSound();
       }
-      
+
       if (showToast) {
         showToast(`🚨 SOS Alert from ${username}!`, "danger");
       }
@@ -300,10 +325,14 @@ const handleUserStatus = ({ userId, status }) => {
     socket.on("location-update", handleLocationUpdate);
     socket.on("anomaly-alert", handleAnomalyAlert);
     socket.on("user-stationary", handleUserStationary);
-    socket.on("user-status",handleUserStatus)
-    socket.on('stationary-confirm', (data) => {
+    socket.on("user-status", handleUserStatus);
+    socket.on("geofence-update", handleGeofenceUpdate);
+    socket.on("geofence-init", handleGeofenceInit);
+    socket.on("stationary-confirm", (data) => {
       try {
-        window.dispatchEvent(new CustomEvent('syncfleet:stationary-confirm', { detail: data }));
+        window.dispatchEvent(
+          new CustomEvent("syncfleet:stationary-confirm", { detail: data }),
+        );
       } catch (e) {
         // ignore
       }
@@ -320,7 +349,7 @@ const handleUserStatus = ({ userId, status }) => {
         const updated = {};
         Object.entries(prev).forEach(([socketId, data]) => {
           const filteredPath = (data.path || []).filter(
-            (p) => now - p.timestamp <= trailExpiryMs
+            (p) => now - p.timestamp <= trailExpiryMs,
           );
           updated[socketId] = {
             ...data,
@@ -344,6 +373,9 @@ const handleUserStatus = ({ userId, status }) => {
       socket.off("user-sos", handleUserSOS);
       socket.off("room-message", handleRoomMessage);
       socket.off("room-users", handleRoomUsers);
+      socket.off("geofence-update", handleGeofenceUpdate);
+      socket.off("geofence-init", handleGeofenceInit);
+
       clearInterval(stationaryCheckIntervalRef.current);
       clearTimeout(reconnectTimeoutRef.current);
     };
@@ -365,45 +397,44 @@ const handleUserStatus = ({ userId, status }) => {
   ]);
 
   // 🔄 Network quality checker (online → weak)
-useEffect(() => {
-  const interval = setInterval(() => {
-    const now = Date.now();
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const now = Date.now();
 
-    setUserLocations((prev) => {
-      const updated = { ...prev };
+      setUserLocations((prev) => {
+        const updated = { ...prev };
 
-      Object.entries(updated).forEach(([socketId, user]) => {
-        if (!user) return;
-        if (user.networkStatus === "offline") return;
+        Object.entries(updated).forEach(([socketId, user]) => {
+          if (!user) return;
+          if (user.networkStatus === "offline") return;
 
-        const lastSeen = lastSeenRef.current[socketId];
-        if (!lastSeen) return;
+          const lastSeen = lastSeenRef.current[socketId];
+          if (!lastSeen) return;
 
-        if (now - lastSeen > 20000) {
-          updated[socketId] = {
-            ...user,
-            networkStatus: "weak",
-          };
-        }
+          if (now - lastSeen > 20000) {
+            updated[socketId] = {
+              ...user,
+              networkStatus: "weak",
+            };
+          }
+        });
+
+        return updated;
       });
+    }, 5000);
 
-      return updated;
-    });
-  }, 5000);
-
-  return () => clearInterval(interval);
-}, []);
-
+    return () => clearInterval(interval);
+  }, []);
 
   return {
     mySocketId,
     isConnecting,
     activeUsers,
     userLocations,
-    alertUsers,
     userTrails,
     creatorSocketId, // ✅ Export creator socket ID
     setUserLocations,
     setAlertUsers,
+    alertUsers,
   };
 };
