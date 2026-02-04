@@ -602,10 +602,11 @@ const RoomMap = ({ room }) => {
   }
   // console.log(coords)
   if (!coords) {
+    
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
-          <p className="text-gray-500 text-lg">Getting your location...</p>
+
           <p className="text-sm text-gray-400 mt-2">
             Please allow location access to continue
           </p>

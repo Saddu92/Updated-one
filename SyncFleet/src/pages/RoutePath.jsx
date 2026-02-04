@@ -78,7 +78,7 @@ const RoutePath = ({ source, destination }) => {
       {path.length > 2 && (
         <>
           {/* Dark outline for better contrast */}
-          <Polyline positions={path} color="#0F172A" weight={16} opacity={0.9} lineCap="round" />
+          <Polyline positions={path} color="#0F172A" weight={16} opacity={0.1} lineCap="round" />
           {/* Visible colored route on top */}
           <Polyline positions={path} color="#2563EB" weight={6} opacity={1} lineCap="round">
             <Tooltip sticky>Route Path</Tooltip>

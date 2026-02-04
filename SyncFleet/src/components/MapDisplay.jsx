@@ -13,6 +13,7 @@ import HazardLayer from "./HazardLayer.jsx";
 import RoutePath from "./RoutePath.jsx";
 import Loader from "@/components/Loader";
 import mapLoader from "@/assets/lottie/Travel.json";
+import React from "react";
 import { useState } from "react";
 const STATUS_COLORS = {
   normal: "#2563EB",     // Cool Blue

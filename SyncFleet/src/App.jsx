@@ -47,7 +47,7 @@ function App() {
       <Loader
         animation={startupLoader}
         size={160}
-        text="Starting SyncFleet…"
+        text="Loading SyncFleet…"
       />
     </div>    );
   }
