@@ -27,43 +27,34 @@ const Dashboard = () => {
         });
         setMyRooms(res.data.rooms || []);
       } catch (err) {
-        console.error("❌ Failed to fetch rooms:", err.message);
+        console.error("Failed to fetch rooms", err);
       }
     };
 
     fetchRooms();
   }, [user, navigate]);
 
-  const handleJoinRoom = async (roomCode) => {
+  const handleJoinRoom = (roomCode) => {
     setActiveRoom(roomCode);
     navigate(`/room/${roomCode}/map`);
   };
 
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-[#f8fbff] via-[#e8f4ff] to-[#dce7f7] font-inter text-gray-800">
-      
-      {/* ================= NAVBAR ================= */}
-      <nav className="backdrop-blur-md py-4 px-4 sm:px-8 shadow-md sticky top-0 z-50 bg-gradient-to-r from-white/80 to-blue-50/80 border-b border-blue-200/50">
-        <div className="flex justify-between items-center max-w-7xl mx-auto">
-          <Link
-            to={"/"}
-            className="text-3xl font-orbitron bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent tracking-wide"
-          >
+    <div className="min-h-screen flex flex-col bg-[#F5F7FA] text-[#111827]">
+
+      {/* ================= HEADER ================= */}
+      <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]">
+        <div className="max-w-7xl mx-auto px-4 h-14 md:h-16 flex items-center justify-between">
+          <Link to="/" className="text-lg font-semibold text-[#2563EB]">
             SyncFleet
           </Link>
 
-          {/* Desktop Menu */}
-          <div className="hidden sm:flex space-x-6 items-center">
-            <button
-              onClick={() => navigate("/")}
-              className="text-gray-700 hover:text-blue-600 font-medium transition"
-            >
+          {/* Desktop */}
+          <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+            <button onClick={() => navigate("/")} className="text-[#6B7280] hover:text-[#2563EB]">
               Home
             </button>
-            <button
-              onClick={() => navigate("/my-rooms")}
-              className="text-gray-700 hover:text-blue-600 font-medium transition"
-            >
+            <button onClick={() => navigate("/my-rooms")} className="text-[#6B7280] hover:text-[#2563EB]">
               My Rooms
             </button>
             <button
@@ -71,172 +62,138 @@ const Dashboard = () => {
                 logout();
                 navigate("/");
               }}
-              className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 rounded-lg font-semibold hover:scale-105 hover:shadow-lg transition"
+              className="px-4 py-2 rounded-md bg-[#2563EB] text-white hover:bg-[#1D4ED8]"
             >
               Logout
             </button>
-          </div>
+          </nav>
 
-          {/* Mobile Hamburger */}
-          <div className="sm:hidden">
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="text-gray-700 focus:outline-none"
-            >
-              {isMenuOpen ? <HiX className="w-6 h-6" /> : <HiMenu className="w-6 h-6" />}
-            </button>
-          </div>
+          {/* Mobile */}
+          <button
+            className="md:hidden p-2 rounded-md hover:bg-[#F3F4F6]"
+            onClick={() => setIsMenuOpen((v) => !v)}
+          >
+            {isMenuOpen ? <HiX /> : <HiMenu />}
+          </button>
         </div>
 
-        {/* Mobile Menu */}
         {isMenuOpen && (
-          <div className="sm:hidden mt-2 flex flex-col gap-3 bg-white/90 p-4 rounded-b-lg border-t border-blue-200/30">
-            <button
-              onClick={() => {
-                navigate("/");
-                setIsMenuOpen(false);
-              }}
-              className="text-gray-700 hover:text-blue-600 font-medium py-2 w-full text-center"
-            >
+          <div className="md:hidden border-t border-[#E5E7EB] bg-white px-4 py-3 space-y-2">
+            <button onClick={() => navigate("/")} className="block w-full text-left py-2">
               Home
             </button>
-            <button
-              onClick={() => {
-                navigate("/my-rooms");
-                setIsMenuOpen(false);
-              }}
-              className="text-gray-700 hover:text-blue-600 font-medium py-2 w-full text-center"
-            >
+            <button onClick={() => navigate("/my-rooms")} className="block w-full text-left py-2">
               My Rooms
             </button>
             <button
               onClick={() => {
                 logout();
                 navigate("/");
-                setIsMenuOpen(false);
               }}
-              className="bg-gradient-to-r from-blue-600 to-cyan-600 text-white px-4 py-2 rounded-lg font-semibold hover:shadow-lg w-full text-center"
+              className="w-full py-2 rounded-md bg-[#2563EB] text-white"
             >
               Logout
             </button>
           </div>
         )}
-      </nav>
+      </header>
 
-      {/* ================= MAIN CONTENT ================= */}
-      <main className="flex-1">
-        <section className="py-12 px-4 sm:px-6 lg:px-8 max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+      {/* ================= CONTENT ================= */}
+      <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
 
-            {/* LEFT SIDE */}
-            <div className="flex flex-col gap-8">
+          {/* LEFT */}
+          <div className="lg:col-span-2 space-y-6">
 
-              {/* Stats */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <StatBox title="Total Rooms" value={myRooms.length} color="blue" />
-                <StatBox title="Active Room" value={activeRoom || "None"} color="green" />
-                <StatBox
-                  title="Total Members"
-                  value={myRooms.reduce(
-                    (sum, room) => sum + (room.members?.length || 0),
-                    0
-                  )}
-                  color="purple"
-                />
-              </div>
-
-              {/* Buttons */}
-              <div className="flex flex-col sm:flex-row gap-4 sm:gap-6">
-                <button
-                  onClick={() => navigate("/create-room")}
-                  className="lg:w-full bg-gradient-to-r from-blue-600 to-cyan-600 text-white py-4 rounded-xl font-semibold hover:scale-105 transition"
-                >
-                  Create Room
-                </button>
-                <button
-                  onClick={() => navigate("/join-room")}
-                  className="lg:w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-4 rounded-xl font-semibold hover:scale-105 transition"
-                >
-                  Join Room
-                </button>
-              </div>
-
-              {/* Recent Activity */}
-              <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200/50 rounded-3xl p-6 shadow-md">
-                <h3 className="text-xl font-orbitron font-bold text-blue-600">
-                  Recent Activity
-                </h3>
-                <p className="text-gray-600 text-sm mt-2">
-                  No recent activity yet.
-                </p>
-              </div>
+            {/* Stats */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <StatBox title="Total Rooms" value={myRooms.length} />
+              <StatBox title="Active Room" value={activeRoom || "None"} />
+              <StatBox
+                title="Total Members"
+                value={myRooms.reduce(
+                  (sum, room) => sum + (room.members?.length || 0),
+                  0
+                )}
+              />
             </div>
 
-            {/* RIGHT SIDE */}
-            <div className="flex flex-col gap-4 max-h-[600px] overflow-x-hidden">
-              <h3 className="text-xl font-orbitron font-bold text-blue-600 mb-4">
-                My Rooms
-              </h3>
+            {/* Actions */}
+            <div className="flex flex-col sm:flex-row gap-4">
+              <button
+                onClick={() => navigate("/create-room")}
+                className="flex-1 py-3 rounded-lg bg-[#2563EB] text-white font-semibold hover:bg-[#1D4ED8]"
+              >
+                Create Room
+              </button>
+              <button
+                onClick={() => navigate("/join-room")}
+                className="flex-1 py-3 rounded-lg border border-[#E5E7EB] bg-white font-semibold hover:bg-[#F9FAFB]"
+              >
+                Join Room
+              </button>
+            </div>
 
-              {myRooms.length === 0 ? (
-                <p className="text-gray-600">
-                  You haven't created or joined any rooms yet.
-                </p>
-              ) : (
-                myRooms.map((room) => (
-                  <div
-                    key={room._id}
-                    className="bg-gradient-to-r from-blue-50 to-cyan-50 border-l-4 border-blue-400 rounded-2xl p-4 shadow hover:shadow-lg transition flex justify-between items-center"
-                  >
-                    <div
-                      className="flex-1 cursor-pointer"
-                      onClick={() => handleJoinRoom(room.code)}
-                    >
-                      <span className="font-semibold text-gray-800">
-                        {room.name || room.code}
-                      </span>
-                    </div>
-
-                    <span
-                      onClick={() => handleJoinRoom(room.code)}
-                      className={`px-3 py-1 rounded-full text-sm font-semibold cursor-pointer ${
-                        activeRoom === room.code
-                          ? "bg-green-500 text-white"
-                          : "bg-gradient-to-r from-blue-500 to-cyan-500 text-white"
-                      }`}
-                    >
-                      {activeRoom === room.code ? "Joined" : "Join"}
-                    </span>
-                  </div>
-                ))
-              )}
+            {/* Activity */}
+            <div className="bg-white border border-[#E5E7EB] rounded-xl p-5">
+              <h3 className="text-sm font-semibold mb-2">Recent activity</h3>
+              <p className="text-sm text-[#6B7280]">
+                No recent activity yet.
+              </p>
             </div>
           </div>
-        </section>
+
+          {/* RIGHT */}
+          <div className="space-y-4">
+            <h3 className="text-sm font-semibold">My Rooms</h3>
+
+            {myRooms.length === 0 ? (
+              <p className="text-sm text-[#6B7280]">
+                You haven’t created or joined any rooms yet.
+              </p>
+            ) : (
+              myRooms.map((room) => (
+                <div
+                  key={room._id}
+                  className="flex items-center justify-between p-4 bg-white border border-[#E5E7EB] rounded-xl hover:shadow-sm transition"
+                >
+                  <div
+                    onClick={() => handleJoinRoom(room.code)}
+                    className="cursor-pointer"
+                  >
+                    <p className="font-medium">
+                      {room.name || room.code}
+                    </p>
+                  </div>
+
+                  <button
+                    onClick={() => handleJoinRoom(room.code)}
+                    className={`px-3 py-1.5 text-xs rounded-full font-semibold ${
+                      activeRoom === room.code
+                        ? "bg-green-100 text-green-700"
+                        : "bg-blue-100 text-blue-700"
+                    }`}
+                  >
+                    {activeRoom === room.code ? "Active" : "Join"}
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
       </main>
 
-      {/* ================= FOOTER ================= */}
       <Footer />
     </div>
   );
 };
 
-/* ---------- Small UI Component (NO LOGIC CHANGE) ---------- */
-const StatBox = ({ title, value, color }) => {
-  const colors = {
-    blue: "from-blue-50 to-cyan-50 text-blue-600",
-    green: "from-green-50 to-emerald-50 text-green-600",
-    purple: "from-purple-50 to-pink-50 text-purple-600",
-  };
-
-  return (
-    <div
-      className={`bg-gradient-to-br ${colors[color]} border rounded-2xl p-6 shadow-md text-center`}
-    >
-      <p className="text-gray-700 font-medium">{title}</p>
-      <p className="text-2xl font-bold">{value}</p>
-    </div>
-  );
-};
+/* ---------- Stat Box ---------- */
+const StatBox = ({ title, value }) => (
+  <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 text-center">
+    <p className="text-sm text-[#6B7280]">{title}</p>
+    <p className="text-2xl font-bold mt-1">{value}</p>
+  </div>
+);
 
 export default Dashboard;

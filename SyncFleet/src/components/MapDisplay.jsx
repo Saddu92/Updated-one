@@ -12,6 +12,15 @@ import UserMarker from "./UserMarker.jsx";
 import UserTrail from "./UserTrail.jsx";
 import HazardLayer from "./HazardLayer.jsx";
 import RoutePath from "./RoutePath.jsx";
+const STATUS_COLORS = {
+  normal: "#2563EB",     // Cool Blue
+  stationary: "#DC2626", // Red (alert)
+  outside: "#F59E0B",    // Amber
+  far: "#EAB308",        // Warning
+  sos: "#DC2626",        // SOS ONLY
+};
+const TRAIL_WEIGHT = window.innerWidth < 768 ? 3 : 4;
+
 
 const MapDisplay = ({
   coords,
@@ -38,12 +47,13 @@ const MapDisplay = ({
 
   return (
     <MapContainer
-      center={coords}
-      zoom={15}
-      style={{ height: "100%", width: "100%" }}
-      ref={mapRef}
-      zoomControl={false}
-    >
+  center={coords}
+  zoom={15}
+  ref={mapRef}
+  zoomControl={false}
+  className="h-full w-full rounded-none md:rounded-lg"
+>
+
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -65,28 +75,27 @@ const MapDisplay = ({
       {/* Recenter */}
       <RecenterMap coords={coords} shouldRecenter={shouldRecenter} />
 
-      {/* Current User Marker */}
-      <UserMarker
-        username={isRoomCreator ? "You (Creator)" : "You"}
-        coords={coords}
-       color={
-  userLocations[mySocketId]?.isStationary
-    ? "#ef4444"
-    : alertUsers[mySocketId] && !isRoomCreator
-    ? "#f59e0b"
-    : getUserColor(mySocketId)
-}
-markerType={
-  userLocations[mySocketId]?.isStationary
-    ? "stationary"
-    : alertUsers[mySocketId] && !isRoomCreator
-    ? "outside"
-    : "normal"
-}
+<UserMarker
+  username={isRoomCreator ? "You (Creator)" : "You"}
+  coords={coords}
+  color={
+    userLocations[mySocketId]?.isStationary
+      ? STATUS_COLORS.stationary
+      : alertUsers[mySocketId] && !isRoomCreator
+      ? STATUS_COLORS.outside
+      : getUserColor(mySocketId)
+  }
+  markerType={
+    userLocations[mySocketId]?.isStationary
+      ? "stationary"
+      : alertUsers[mySocketId] && !isRoomCreator
+      ? "outside"
+      : "normal"
+  }
+  batteryLevel={userLocations[mySocketId]?.battery?.level}
+  networkStatus={userLocations[mySocketId]?.networkStatus}
+/>
 
-        batteryLevel={userLocations[mySocketId]?.battery?.level}
-         networkStatus={userLocations[mySocketId]?.networkStatus}
-      />
 
       {/* Other Users */}
       {Object.entries(userLocations)
@@ -125,28 +134,26 @@ markerType={
               />
 
               {/* Trail */}
+              
               {u.path && u.path.length > 1 && (
                 <UserTrail
-                  positions={u.path}
-                  color={
-                    markerType === "stationary"
-                      ? "#ef4444"
-                      : markerType === "far"
-                      ? "#eab308"
-                      : markerType === "outside"
-                      ? "#f59e0b"
-                      : getUserColor(id)
-                  }
-                  weight={4}
-                  dashArray={
-                    markerType === "stationary" ||
-                    markerType === "far" ||
-                    markerType === "outside"
-                      ? "5,5"
-                      : null
-                  }
-                  isAlert={Boolean(markerType !== "normal")}
-                />
+  positions={u.path}
+  color={
+    markerType === "stationary"
+      ? STATUS_COLORS.stationary
+      : markerType === "far"
+      ? STATUS_COLORS.far
+      : markerType === "outside"
+      ? STATUS_COLORS.outside
+      : getUserColor(id)
+  }
+  weight={TRAIL_WEIGHT}
+  dashArray={
+    markerType !== "normal" ? "6,6" : null
+  }
+  isAlert={markerType !== "normal"}
+/>
+
               )}
             </React.Fragment>
           );

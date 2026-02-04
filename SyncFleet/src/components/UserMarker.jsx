@@ -4,57 +4,83 @@ import PropTypes from "prop-types";
 import { Marker, Popup } from "react-leaflet";
 import { createPulsingIcon } from "../utils/iconHelpers.js";
 
-const UserMarker = ({ username, coords, color, markerType, deviationDistance, batteryLevel }) => {
+const STATUS_COLORS = {
+  sos: "#DC2626",
+  stationary: "#B91C1C",
+  far: "#EAB308",
+  outside: "#F59E0B",
+};
+
+const UserMarker = ({
+  username,
+  coords,
+  color,
+  markerType = "normal",
+  deviationDistance,
+  batteryLevel,
+}) => {
+  const resolvedColor =
+    STATUS_COLORS[markerType] || color;
+
   return (
     <Marker
       position={coords}
       icon={createPulsingIcon(
-        markerType === "sos" || markerType === "stationary"
-          ? "#ef4444"
-          : markerType === "far"
-          ? "#eab308"
-          : markerType === "outside"
-          ? "#f59e0b"
-          : color,
+        resolvedColor,
         username,
         markerType,
         batteryLevel
       )}
     >
-      <Popup className="font-medium">
-        <div className="flex flex-col gap-1">
-          <span className="font-bold text-base">{username}</span>
-          
-          {(markerType === "stationary" || markerType === "sos") && (
-            <span className="text-red-600 font-bold text-sm bg-red-100 px-2 py-1 rounded">
-              🚨 SOS - NEEDS HELP
-            </span>
+      <Popup className="syncfleet-popup">
+        <div className="flex flex-col gap-2 min-w-[180px] text-sm">
+
+          {/* Username */}
+          <div className="font-semibold text-[#111827]">
+            {username}
+          </div>
+
+          {/* ALERTS */}
+          {markerType === "sos" && (
+            <div className="px-3 py-2 rounded-md bg-red-100 text-red-700 font-semibold text-xs">
+              EMERGENCY · SOS ACTIVE
+            </div>
           )}
-          
-          {markerType === "far" && (
-            <span className="text-yellow-600 text-sm">
-              ⚠️ {Math.round(deviationDistance)}m from group
-            </span>
+
+          {markerType === "stationary" && (
+            <div className="px-3 py-2 rounded-md bg-red-50 text-red-600 font-medium text-xs">
+              User is stationary
+            </div>
           )}
-          
+
           {markerType === "outside" && (
-            <span className="text-orange-600 font-bold text-sm">
-              ⚠️ Outside geofenced area!
-            </span>
+            <div className="px-3 py-2 rounded-md bg-amber-100 text-amber-700 font-medium text-xs">
+              Outside geofenced area
+            </div>
           )}
-          
-          {batteryLevel !== null && batteryLevel !== undefined && (
-            <span className={`text-xs font-medium ${
-              batteryLevel < 0.15 
-                ? "text-red-600" 
-                : batteryLevel < 0.3 
-                ? "text-orange-500" 
-                : "text-green-600"
-            }`}>
-              🔋 Battery: {Math.round(batteryLevel * 100)}%
-              {batteryLevel < 0.15 && " - LOW!"}
-            </span>
+
+          {markerType === "far" && (
+            <div className="px-3 py-2 rounded-md bg-yellow-100 text-yellow-700 font-medium text-xs">
+              {Math.round(deviationDistance)}m from group center
+            </div>
           )}
+
+          {/* Battery */}
+          {batteryLevel !== null &&
+            batteryLevel !== undefined && (
+              <div
+                className={`text-xs font-medium ${
+                  batteryLevel < 0.15
+                    ? "text-red-600"
+                    : batteryLevel < 0.3
+                    ? "text-amber-600"
+                    : "text-green-600"
+                }`}
+              >
+                Battery: {Math.round(batteryLevel * 100)}%
+                {batteryLevel < 0.15 && " (Low)"}
+              </div>
+            )}
         </div>
       </Popup>
     </Marker>
@@ -68,7 +94,13 @@ UserMarker.propTypes = {
     lng: PropTypes.number.isRequired,
   }).isRequired,
   color: PropTypes.string.isRequired,
-  markerType: PropTypes.oneOf(["normal", "stationary", "far", "outside", "sos"]),
+  markerType: PropTypes.oneOf([
+    "normal",
+    "stationary",
+    "far",
+    "outside",
+    "sos",
+  ]),
   deviationDistance: PropTypes.number,
   batteryLevel: PropTypes.number,
 };

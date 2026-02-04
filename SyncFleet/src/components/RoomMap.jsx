@@ -616,7 +616,8 @@ const RoomMap = ({ room }) => {
  return (
   <ErrorBoundary>
     {/* ROOT: full viewport */}
-    <div className="relative h-screen w-screen overflow-hidden bg-gradient-to-br from-white via-sky-50 to-sky-100 text-gray-800">
+    <div className="relative h-screen w-screen overflow-hidden bg-[#F5F7FA] text-[#111827]">
+
 
       {/* Toast */}
       <Toast message={toast?.message} type={toast?.type} />
@@ -629,7 +630,7 @@ const RoomMap = ({ room }) => {
       />
 
       {/* ================= MAP (FULLSCREEN) ================= */}
-      <div className="absolute inset-0">
+      <div className="absolute inset-0 pb-16 md:pb-0">
         <MapDisplay
           coords={coords}
           mapRef={mapRef}
@@ -648,7 +649,7 @@ const RoomMap = ({ room }) => {
         />
 
         {/* Connection Status - Mobile */}
-        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[9999] flex items-center bg-white/95 px-2 md:px-3 py-1 rounded-full shadow border text-xs md:text-sm">
+        <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[9999] flex items-centerbg-white px-3 py-1.5 rounded-full border border-[#E5E7EB] shadow-sm">
           <div
             className={`w-2 md:w-3 h-2 md:h-3 rounded-full mr-2 ${
               socket.connected ? "bg-green-600" : "bg-red-500"
@@ -678,7 +679,8 @@ const RoomMap = ({ room }) => {
           className="p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-gray-50 hover:shadow-md transition"
           title="Recenter map"
         >
-          <IoLocationSharp className="text-sky-600 text-xl" />
+        <IoLocationSharp className="text-[#2563EB] text-xl" />
+
         </button>
 
         {/* Chat */}
@@ -687,7 +689,8 @@ const RoomMap = ({ room }) => {
           className="relative p-3 bg-white border border-gray-200 rounded-lg shadow hover:bg-sky-50 hover:shadow-md transition"
           title="Open chat"
         >
-          <FiMessageSquare className="text-sky-600 text-xl" />
+          <FiMessageSquare className="text-[#2563EB] text-xl" />
+
           {messages.length > 0 && (
             <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center">
               {messages.length}
@@ -747,7 +750,8 @@ const RoomMap = ({ room }) => {
             className="flex flex-col items-center gap-1 p-2 rounded-lg active:bg-gray-100 transition min-w-[60px]"
             title="Recenter"
           >
-            <IoLocationSharp className="text-sky-600 text-2xl" />
+          <IoLocationSharp className="text-[#2563EB] text-xl" />
+
             <span className="text-xs font-medium text-gray-700">Map</span>
           </button>
 
@@ -758,7 +762,8 @@ const RoomMap = ({ room }) => {
             title="Chat"
           >
             <div className="relative">
-              <FiMessageSquare className="text-sky-600 text-2xl" />
+            <FiMessageSquare className="text-[#2563EB] text-xl" />
+
               {messages.length > 0 && (
                 <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                   {messages.length > 9 ? '9+' : messages.length}
@@ -823,7 +828,7 @@ const RoomMap = ({ room }) => {
       </div>
 
       {/* ================= SOS BUTTON (MOBILE) ================= */}
-      <div className="md:hidden fixed bottom-20 right-4 z-[9997]">
+      <div className="md:hidden fixed bottom-24 right-4  md:bottom-8 z-[9997]">
         <SOSButton
           onClick={() => {
             playAlertSound();

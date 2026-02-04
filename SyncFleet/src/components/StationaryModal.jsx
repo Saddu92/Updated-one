@@ -7,47 +7,74 @@ const StationaryModal = ({ isOpen, onYes, onNo }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[99999] p-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-xl border-2 border-red-100 p-6 md:p-8 animate-[modal-shake_0.5s_ease-in-out]">
-        <div className="flex flex-col items-center">
+    <div
+      className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/40 p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stationary-title"
+    >
+      <div className="w-full max-w-md rounded-2xl bg-white border border-[#E5E7EB] shadow-xl p-6 md:p-8">
+
+        {/* Icon */}
+        <div className="flex justify-center">
           <div className="relative">
-            <IoAlertCircle size={64} className="text-red-600" />
-            <span className="absolute -top-2 -right-2 w-20 h-20 rounded-full bg-red-100/60 animate-pulse-block" />
-          </div>
-
-          <h2 className="text-xl md:text-2xl font-bold text-red-600 mt-4">Stationary Detected!</h2>
-
-          <p className="text-sm text-gray-700 mt-3 text-center">You've been stationary for over 5 minutes.</p>
-
-          <p className="text-lg font-semibold text-gray-800 mt-4 mb-4">Are you okay?</p>
-
-          <div className="flex gap-3 w-full">
-            <button
-              onClick={onYes}
-              className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white font-bold rounded-lg py-3 shadow-sm transition"
-            >
-              ✓ Yes, I'm OK
-            </button>
-            <button
-              onClick={onNo}
-              className="flex-1 bg-red-600 hover:bg-red-700 text-white font-bold rounded-lg py-3 shadow-sm transition"
-            >
-              ✗ Need Help!
-            </button>
-          </div>
-
-          <div className="mt-4 px-4 py-2 bg-red-50 border border-red-100 rounded text-sm text-red-600 text-center">
-            ⏱️ No response in 30 seconds will automatically send SOS alert
+            <span className="absolute inset-0 rounded-full bg-red-100 animate-stationaryPulse" />
+            <IoAlertCircle
+              size={56}
+              className="relative text-[#DC2626]"
+            />
           </div>
         </div>
 
-        <style>
-          {`
-            @keyframes modal-shake { 0%,100%{transform:translateX(0);}25%{transform:translateX(-8px);}75%{transform:translateX(8px);} }
-            .animate-pulse-block{ animation: pulse-ring 1.5s ease-out infinite; }
-            @keyframes pulse-ring { 0% { transform: scale(1); opacity: 0.6; } 100% { transform: scale(1.5); opacity: 0; } }
-          `}
-        </style>
+        {/* Content */}
+        <h2
+          id="stationary-title"
+          className="mt-4 text-lg md:text-xl font-semibold text-center text-[#111827]"
+        >
+          No movement detected
+        </h2>
+
+        <p className="mt-2 text-sm text-center text-[#6B7280]">
+          You have not moved for a while. Please confirm your status.
+        </p>
+
+        <p className="mt-4 text-base font-medium text-center text-[#111827]">
+          Are you okay?
+        </p>
+
+        {/* Actions */}
+        <div className="mt-6 flex gap-3">
+          <button
+            onClick={onYes}
+            className="
+              flex-1 py-3 rounded-lg
+              bg-[#16A34A] hover:bg-[#15803D]
+              text-white font-semibold
+              transition active:scale-95
+            "
+          >
+            I’m OK
+          </button>
+
+          <button
+            onClick={onNo}
+            className="
+              flex-1 py-3 rounded-lg
+              bg-[#DC2626] hover:bg-[#B91C1C]
+              text-white font-semibold
+              transition active:scale-95
+            "
+          >
+            Send SOS
+          </button>
+        </div>
+
+        {/* Auto SOS Notice */}
+        <div className="mt-5 rounded-lg bg-[#FEF2F2] border border-red-200 px-4 py-3 text-center">
+          <p className="text-xs font-medium text-[#991B1B]">
+            If there is no response, an SOS alert will be sent automatically.
+          </p>
+        </div>
       </div>
     </div>
   );

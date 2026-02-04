@@ -16,26 +16,29 @@ const UsersPanel = ({
   setTrailDuration,
   geofenceRadius,
   setGeofenceRadius,
-  creatorSocketId, // ✅ NEW
+  creatorSocketId,
 }) => {
   if (!isOpen) return null;
 
   return (
-    <div className="fixed bottom-4 left-4 right-4 md:top-4 md:left-4 md:right-auto w-auto md:w-72 max-w-sm md:max-w-none bg-white/95 text-gray-800 border border-gray-200 rounded-xl shadow-lg z-[9999] overflow-hidden">
+    <div className="fixed bottom-4 left-4 right-4 md:top-4 md:left-4 md:right-auto md:w-80 bg-white text-[#111827] border border-[#E5E7EB] rounded-xl shadow-lg z-[9999] overflow-hidden">
+
       {/* Header */}
-      <div className="flex items-center justify-between p-3 bg-sky-600 rounded-t-xl text-white font-semibold text-sm shadow-sm">
-        <span>Active Users ({activeUsers.length})</span>
+      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E7EB] bg-white">
+        <span className="text-sm font-semibold">
+          Active Users ({activeUsers.length})
+        </span>
         <button
           onClick={onClose}
-          className="text-white hover:text-sky-100 transition-all text-lg font-bold"
+          className="text-[#6B7280] hover:text-[#111827] text-lg"
           aria-label="Close users panel"
         >
           ×
         </button>
       </div>
 
-      {/* Users List */}
-      <div className="max-h-64 overflow-y-auto divide-y divide-gray-100 p-1">
+      {/* Users list */}
+      <div className="max-h-64 overflow-y-auto divide-y divide-[#F1F5F9]">
         {activeUsers.map((user) => {
           const location = userLocations[user.socketId] || {};
           const batteryLevel = location.battery?.level ?? null;
@@ -45,69 +48,68 @@ const UsersPanel = ({
           return (
             <div
               key={user.socketId}
-              className={`flex items-center justify-between p-2 rounded transition ${
+              className={`flex items-center justify-between px-4 py-2 text-sm ${
                 location.isStationary ? "bg-red-50" : ""
-              } ${isCreator ? "bg-yellow-50" : ""}`}
+              }`}
             >
-              <div className="flex items-center gap-2 truncate flex-1">
-                <div
-                  className="w-3 h-3 rounded-full"
+              {/* Left */}
+              <div className="flex items-center gap-2 min-w-0">
+                <span
+                  className="w-2.5 h-2.5 rounded-full shrink-0"
                   style={{
                     backgroundColor: location.isStationary
-                      ? "#ef4444"
+                      ? "#DC2626"
                       : getUserColor(user.socketId),
                   }}
                 />
-                <div className="flex flex-col truncate">
-                  <div className="flex items-center gap-2">
-                    <span className="truncate text-sm font-medium text-blue-500">
-                      {user.username}
-                      {user.socketId === mySocketId && " (You)"}
-                    </span>
-                    {/* ✅ Creator Badge */}
-                    {isCreator && (
-                      <span className="bg-yellow-400 text-black text-xs px-2 py-0.5 rounded-full font-bold">
-                        👑 Leader
-                      </span>
-                    )}
-                  </div>
-                  {/* ✅ Show distance from creator for non-creators */}
+                <div className="flex flex-col min-w-0">
+                  <span className="truncate font-medium">
+                    {user.username}
+                    {user.socketId === mySocketId && " (You)"}
+                  </span>
+
                   {!isCreator && geofence.center && location.coords && (
-                    <span className="text-xs text-black-500">
+                    <span className="text-xs text-[#6B7280]">
                       {Math.round(
                         haversine(location.coords, geofence.center)
-                      )}m from leader
+                      )} m from leader
+                    </span>
+                  )}
+
+                  {isCreator && (
+                    <span className="text-xs text-[#6B7280]">
+                      Group leader
                     </span>
                   )}
                 </div>
               </div>
 
-              <div className="flex items-center gap-1 text-xs">
-                {/* Battery */}
-                {batteryLevel !== null && (
+              {/* Right */}
+              <div className="flex flex-col items-end gap-0.5 text-xs">
+                {batteryLevel != null && (
                   <span
                     className={`font-medium ${
                       batteryLevel < 0.15
                         ? "text-red-600"
                         : batteryLevel < 0.3
-                        ? "text-orange-500"
-                        : "text-emerald-600"
+                        ? "text-amber-600"
+                        : "text-green-600"
                     }`}
-                    title={`Battery: ${Math.round(batteryLevel * 100)}%`}
                   >
-                    🔋{Math.round(batteryLevel * 100)}%
-                    {location.battery?.charging ? "⚡" : ""}
+                    {Math.round(batteryLevel * 100)}%
                   </span>
                 )}
 
-                {/* Outside geofence - only for non-creators */}
                 {!isCreator && outside && (
-                  <span className="text-orange-500 font-semibold">⚠️ FAR</span>
+                  <span className="text-amber-600 font-semibold">
+                    Outside zone
+                  </span>
                 )}
 
-                {/* SOS */}
                 {location.isStationary && (
-                  <span className="text-red-600 font-bold">🚨 SOS</span>
+                  <span className="text-red-600 font-semibold">
+                    SOS
+                  </span>
                 )}
               </div>
             </div>
@@ -115,38 +117,49 @@ const UsersPanel = ({
         })}
       </div>
 
-      {/* Trail Duration */}
-      <div className="p-3 border-t border-gray-100 bg-white">
-        <label className="text-xs text-gray-600 mb-1 block">
-          Trail Duration (minutes)
+      {/* Trail duration */}
+      <div className="px-4 py-3 border-t border-[#E5E7EB]">
+        <label className="block text-xs text-[#6B7280] mb-1">
+          Trail duration
         </label>
         <select
           value={trailDuration}
           onChange={(e) => setTrailDuration(Number(e.target.value))}
-          className="w-full p-2 border border-gray-200 rounded text-sm bg-white text-gray-700 focus:ring-1 focus:ring-sky-300 focus:border-sky-300"
+          className="w-full px-3 py-2 border border-[#E5E7EB] rounded-md text-sm focus:ring-2 focus:ring-blue-300"
         >
-          <option value={5}>5</option>
-          <option value={10}>10</option>
-          <option value={15}>15</option>
+          <option value={5}>5 minutes</option>
+          <option value={10}>10 minutes</option>
+          <option value={15}>15 minutes</option>
         </select>
       </div>
 
-      {/* Geofence Radius */}
-      <div className="p-3 border-t border-gray-100 bg-white">
-        <label className="text-xs text-gray-600 mb-1 block">
-          Geofence Radius (meters) - Leader's Area
+      {/* Geofence radius (FIXED) */}
+      <div className="px-4 py-3 border-t border-[#E5E7EB] bg-[#F9FAFB]">
+        <label className="block text-xs font-medium text-[#374151] mb-1">
+          Geofence radius (meters)
         </label>
+
+        {/* Slider – safer than free input */}
         <input
-          type="number"
+          type="range"
           min={100}
           max={2000}
           step={50}
           value={geofenceRadius}
           onChange={(e) => setGeofenceRadius(Number(e.target.value))}
-          className="w-full p-2 border border-gray-200 rounded text-sm bg-white text-gray-700 focus:ring-1 focus:ring-sky-300 focus:border-sky-300"
+          className="w-full accent-[#2563EB]"
         />
-        <p className="text-xs text-gray-500 mt-1">
-          All members should stay within this distance from the leader
+
+        <div className="flex justify-between text-xs text-[#6B7280] mt-1">
+          <span>100 m</span>
+          <span className="font-semibold text-[#111827]">
+            {geofenceRadius} m
+          </span>
+          <span>2000 m</span>
+        </div>
+
+        <p className="mt-1 text-xs text-[#6B7280]">
+          Members should stay within this distance from the leader
         </p>
       </div>
     </div>
@@ -156,12 +169,7 @@ const UsersPanel = ({
 UsersPanel.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  activeUsers: PropTypes.arrayOf(
-    PropTypes.shape({
-      socketId: PropTypes.string.isRequired,
-      username: PropTypes.string.isRequired,
-    })
-  ).isRequired,
+  activeUsers: PropTypes.array.isRequired,
   userLocations: PropTypes.object.isRequired,
   mySocketId: PropTypes.string,
   getUserColor: PropTypes.func.isRequired,

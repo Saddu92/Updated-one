@@ -4,60 +4,80 @@ import React from "react";
 
 const About = () => {
   return (
-    <div className="flex flex-col min-h-screen bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] text-white font-inter">  
-      <Navbar/>
+    <div className="flex flex-col min-h-screen bg-[#F5F7FA] text-[#111827] font-inter">
+      <Navbar />
 
-      {/* Hero Section */}
-      <header className="py-16 md:py-24 text-center px-6 md:px-0">
+      {/* ================= HERO ================= */}
+      <header className="py-16 md:py-24 px-6 text-center">
         <div className="max-w-4xl mx-auto">
-          <h1 className="text-4xl md:text-6xl font-orbitron font-extrabold text-white mb-6 drop-shadow-md">
+          <h1 className="text-4xl md:text-5xl font-bold font-orbitron mb-6">
             About SyncFleet
           </h1>
-          <p className="text-gray-300 text-base md:text-lg lg:text-xl max-w-2xl mx-auto mb-10 leading-relaxed">
-            SyncFleet is your companion for seamless group tracking and team coordination.  
-            Whether you’re on a road trip, biking adventure, or managing a logistics team,  
-            SyncFleet helps you stay connected, safe, and informed in real-time.
+          <p className="text-[#6B7280] text-base md:text-lg max-w-2xl mx-auto leading-relaxed">
+            SyncFleet is a real-time location tracking and safety platform designed
+            for coordinated travel, group movement, and fleet awareness.
+            Whether you’re on the road, managing teams, or traveling together,
+            SyncFleet keeps everyone connected and informed.
           </p>
         </div>
       </header>
 
-      {/* About Features */}
-      <section className="max-w-6xl mx-auto py-12 px-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 md:gap-10">
-        
-        <div className="bg-[#1e1b4b] backdrop-blur-md p-6 sm:p-8 rounded-3xl shadow-lg border border-[#00C2FF]/30 flex flex-col items-center text-center hover:scale-105 transition transform">
-          <h3 className="text-xl sm:text-2xl font-orbitron font-bold text-cyan-400 mb-3">Real-Time Tracking</h3>
-          <p className="text-gray-300 text-sm sm:text-base">
-            Monitor your team’s location in real-time with smooth, accurate maps.
-          </p>
-        </div>
+      {/* ================= FEATURES ================= */}
+      <section className="max-w-6xl mx-auto px-6 pb-16">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6">
 
-        <div className="bg-[#1e1b4b] backdrop-blur-md p-6 sm:p-8 rounded-3xl shadow-lg border border-[#22c55e]/30 flex flex-col items-center text-center hover:scale-105 transition transform">
-          <h3 className="text-xl sm:text-2xl font-orbitron font-bold text-green-400 mb-3">Team Chat</h3>
-          <p className="text-gray-300 text-sm sm:text-base">
-            Stay connected with your group through in-app chat for coordination and updates.
-          </p>
-        </div>
+          {/* Feature 1 */}
+          <div className="bg-white rounded-xl border border-[#E5E7EB] p-6 shadow-sm hover:shadow-md transition">
+            <h3 className="text-lg font-semibold text-[#2563EB] mb-3">
+              Real-time Tracking
+            </h3>
+            <p className="text-sm text-[#6B7280] leading-relaxed">
+              Monitor live locations with accurate positioning, smooth updates,
+              and group visibility designed for safety and coordination.
+            </p>
+          </div>
 
-        <div className="bg-[#1e1b4b] backdrop-blur-md p-6 sm:p-8 rounded-3xl shadow-lg border border-[#facc15]/30 flex flex-col items-center text-center hover:scale-105 transition transform">
-          <h3 className="text-xl sm:text-2xl font-orbitron font-bold text-[#FFD369] mb-3">Emergency Alerts</h3>
-          <p className="text-gray-300 text-sm sm:text-base">
-            Quickly send SOS alerts to notify your group in case of emergencies.
-          </p>
-        </div>
+          {/* Feature 2 */}
+          <div className="bg-white rounded-xl border border-[#E5E7EB] p-6 shadow-sm hover:shadow-md transition">
+            <h3 className="text-lg font-semibold text-[#16A34A] mb-3">
+              Team Communication
+            </h3>
+            <p className="text-sm text-[#6B7280] leading-relaxed">
+              Stay aligned through built-in chat, alerts, and system messages
+              without switching between apps.
+            </p>
+          </div>
 
+          {/* Feature 3 */}
+          <div className="bg-white rounded-xl border border-[#E5E7EB] p-6 shadow-sm hover:shadow-md transition">
+            <h3 className="text-lg font-semibold text-[#1D4ED8] mb-3">
+              Safety & Awareness
+            </h3>
+            <p className="text-sm text-[#6B7280] leading-relaxed">
+              Built with safety in mind — including SOS alerts, inactivity
+              detection, and geofence-based awareness.
+            </p>
+          </div>
+
+        </div>
       </section>
 
-      {/* Vision Section */}
-      <section className="bg-[#1e1b4b] backdrop-blur-md py-12 px-6 md:px-8 rounded-3xl shadow-xl border border-[#00C2FF]/20 max-w-6xl mx-auto mb-16">
-        <h2 className="text-2xl md:text-3xl font-orbitron font-bold text-white text-center mb-6">Our Vision</h2>
-        <p className="text-gray-300 text-base md:text-lg lg:text-xl text-center max-w-3xl mx-auto leading-relaxed">
-          We aim to redefine group travel and team coordination by providing a modern, reliable, and intuitive platform.  
-          SyncFleet empowers teams and explorers to move together safely and efficiently, no matter where the journey takes them.
-        </p>
+      {/* ================= VISION ================= */}
+      <section className="max-w-5xl mx-auto px-6 pb-20">
+        <div className="bg-white rounded-2xl border border-[#E5E7EB] p-8 md:p-12 shadow-sm">
+          <h2 className="text-2xl md:text-3xl font-bold font-orbitron text-center mb-6">
+            Our Vision
+          </h2>
+          <p className="text-[#6B7280] text-base md:text-lg text-center max-w-3xl mx-auto leading-relaxed">
+            We believe group movement should be coordinated, transparent, and safe.
+            SyncFleet is built to support teams, travelers, and fleets with
+            reliable real-time insights — helping people move together with
+            confidence, clarity, and control.
+          </p>
+        </div>
       </section>
 
-      {/* Footer */}
-      <Footer/>
+      <Footer />
     </div>
   );
 };

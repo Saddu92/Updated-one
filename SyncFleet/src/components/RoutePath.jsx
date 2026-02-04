@@ -1,13 +1,16 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import { Polyline, Tooltip } from "react-leaflet";
 import API from "@/utils/axios.js";
 import { DIRECTIONS, GEOCODE } from "../utils/constant.js";
 
-// ...imports unchanged
-
 const RoutePath = ({ source, destination }) => {
   const [path, setPath] = useState([]);
   const [loading, setLoading] = useState(false);
+
+  const isMobile = useMemo(
+    () => typeof window !== "undefined" && window.innerWidth < 768,
+    []
+  );
 
   useEffect(() => {
     const fetchRoute = async () => {
@@ -22,25 +25,28 @@ const RoutePath = ({ source, destination }) => {
             val.lat != null &&
             val.lng != null
           ) {
-            return API.get(GEOCODE, { params: { lat: val.lat, lon: val.lng } }); // reverse
+            return API.get(GEOCODE, {
+              params: { lat: val.lat, lon: val.lng },
+            });
           }
-          return API.get(GEOCODE, { params: { text: String(val) } }); // forward
+          return API.get(GEOCODE, {
+            params: { text: String(val) },
+          });
         };
 
         const [srcResp, destResp] = await Promise.all([
           geocodeOne(source),
           geocodeOne(destination),
         ]);
+
         const src = srcResp.data;
         const dest = destResp.data;
 
         if (!src?.lat || !src?.lng || !dest?.lat || !dest?.lng) {
-          console.error("❌ Geocoding failed", { src, dest });
           setPath([]);
           return;
         }
 
-        // Call backend OSRM proxy with flat params it expects
         const routeResp = await API.get(DIRECTIONS, {
           params: {
             startLat: src.lat,
@@ -50,14 +56,9 @@ const RoutePath = ({ source, destination }) => {
           },
         });
 
-        // Backend returns normalized coordinates for Leaflet
-        const coords = routeResp.data?.route || [];
-        setPath(coords);
+        setPath(routeResp.data?.route || []);
       } catch (err) {
-        console.error(
-          "❌ Error fetching route:",
-          err.response?.data || err.message
-        );
+        console.error("❌ Route fetch failed", err);
         setPath([]);
       } finally {
         setLoading(false);
@@ -67,15 +68,30 @@ const RoutePath = ({ source, destination }) => {
     fetchRoute();
   }, [source, destination]);
 
-  if (!source || !destination) return null;
+  if (!source || !destination || path.length < 2) return null;
 
   return (
     <>
-      {loading && <div>Loading route...</div>}
-      {path.length > 2 && (
-        <Polyline positions={path} color="blue" weight={5}>
-          <Tooltip sticky>Route Path</Tooltip>
-        </Polyline>
+      {/* Route polyline */}
+      <Polyline
+        positions={path}
+        pathOptions={{
+          color: "#2563EB",
+          weight: isMobile ? 3 : 4,
+          opacity: 0.7,
+          dashArray: "6,8",
+        }}
+      >
+        <Tooltip sticky direction="top" offset={[0, -10]}>
+          Planned Route
+        </Tooltip>
+      </Polyline>
+
+      {/* Optional loading indicator (non-intrusive) */}
+      {loading && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[9999] px-3 py-1.5 rounded-full bg-white border border-[#E5E7EB] text-xs text-[#6B7280] shadow-sm">
+          Calculating route…
+        </div>
       )}
     </>
   );

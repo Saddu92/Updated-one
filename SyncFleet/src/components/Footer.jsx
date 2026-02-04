@@ -3,37 +3,65 @@ import { Link } from "react-router-dom";
 
 const Footer = () => {
   return (
-    <footer className="bg-white/80 backdrop-blur border-t border-blue-200/40">
-      <div className="max-w-7xl mx-auto px-6 py-10 grid grid-cols-1 md:grid-cols-3 gap-8">
+    <footer className="bg-[#F5F7FA] border-t border-[#E5E7EB]">
+      <div className="max-w-7xl mx-auto px-6 py-12 grid grid-cols-1 md:grid-cols-3 gap-10">
 
-        <div>
-          <h2 className="text-xl font-orbitron bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+        {/* Brand */}
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-[#111827] tracking-wide">
             SyncFleet
           </h2>
-          <p className="text-gray-600 text-sm mt-2">
-            Real-time room & location synchronization platform.
+          <p className="text-sm text-[#6B7280] leading-relaxed max-w-sm">
+            Real-time location tracking and safety coordination platform
+            built for reliability and clarity.
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <Link to="/" className="hover:text-blue-600">Home</Link>
-          <Link to="/about" className="hover:text-blue-600">About</Link>
-          <Link to="/contact" className="hover:text-blue-600">Contact</Link>
-          <Link to="/help" className="hover:text-blue-600">Help</Link>
-          <Link to="/community" className="hover:text-blue-600">Community</Link>
-          <Link to="/faq" className="hover:text-blue-600">FAQ</Link>
+        {/* Links */}
+        <div className="grid grid-cols-2 gap-y-2 text-sm text-[#6B7280]">
+          {[
+            { to: "/", label: "Home" },
+            { to: "/about", label: "About" },
+            { to: "/contact", label: "Contact" },
+            { to: "/help", label: "Help Center" },
+            { to: "/community", label: "Community" },
+            { to: "/faq", label: "FAQ" },
+          ].map((link) => (
+            <Link
+              key={link.label}
+              to={link.to}
+              className="hover:text-[#2563EB] transition-colors"
+            >
+              {link.label}
+            </Link>
+          ))}
         </div>
 
-        <div className="flex md:justify-end gap-4 text-xl">
-          <a href="#" className="hover:text-blue-600">🐦</a>
-          <a href="#" className="hover:text-blue-600">💼</a>
-          <a href="#" className="hover:text-blue-600">🐙</a>
-          <a href="#" className="hover:text-blue-600">✉️</a>
+        {/* Social / Contact */}
+        <div className="flex md:justify-end items-start gap-4">
+          {[
+            { label: "Twitter", icon: "🐦" },
+            { label: "LinkedIn", icon: "💼" },
+            { label: "GitHub", icon: "🐙" },
+            { label: "Email", icon: "✉️" },
+          ].map((item) => (
+            <a
+              key={item.label}
+              href="#"
+              aria-label={item.label}
+              className="text-[#9CA3AF] hover:text-[#2563EB] transition-transform transition-colors duration-150 hover:-translate-y-[2px]"
+            >
+              <span className="text-lg">{item.icon}</span>
+            </a>
+          ))}
         </div>
       </div>
 
-      <div className="text-center text-xs text-gray-500 border-t py-4">
-        © {new Date().getFullYear()} SyncFleet. All rights reserved.
+      {/* Bottom Bar */}
+      <div className="border-t border-[#E5E7EB] py-4 text-center">
+        <p className="text-xs text-[#9CA3AF]">
+          © {new Date().getFullYear()} SyncFleet. All rights reserved.
+        </p>
       </div>
     </footer>
   );

@@ -15,88 +15,111 @@ const Navbar = () => {
   };
 
   return (
-    <header className="bg-white sticky top-0 z-50 border-b shadow-sm font-inter">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex justify-between items-center">
+    <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
+
         {/* Logo */}
         <Link
           to="/"
-          className="text-2xl font-orbitron text-sky-600 tracking-wide"
+          className="text-lg font-semibold tracking-wide text-[#2563EB]"
         >
           SyncFleet
         </Link>
 
-        {/* Desktop Menu */}
-        <nav className="hidden md:flex items-center gap-6 font-medium">
-          <Link to="/" className="text-gray-700 hover:text-sky-600">
-            Home
-          </Link>
-          <Link to="/about" className="text-gray-700 hover:text-sky-600">
-            About
-          </Link>
-          <Link to="/contact" className="text-gray-700 hover:text-sky-600">
-            Contact
-          </Link>
+        {/* Desktop Nav */}
+        <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
+          {["Home", "About", "Contact"].map((item) => (
+            <Link
+              key={item}
+              to={item === "Home" ? "/" : `/${item.toLowerCase()}`}
+              className="text-[#6B7280] hover:text-[#2563EB] transition-colors"
+            >
+              {item}
+            </Link>
+          ))}
 
           {user ? (
             <button
               onClick={handleLogout}
-              className="bg-amber-400 text-black px-4 py-2 rounded-lg hover:bg-amber-300 transition"
+              className="ml-4 px-4 py-2 rounded-md text-sm font-medium text-[#374151] hover:bg-[#F3F4F6] transition"
             >
               Logout
             </button>
           ) : (
-            <>
+            <div className="flex items-center gap-2 ml-4">
               <Link
                 to="/login"
-                className="bg-sky-600 text-white px-4 py-2 rounded-lg hover:bg-sky-500"
+                className="px-4 py-2 rounded-md text-sm font-medium text-white bg-[#2563EB] hover:bg-[#1D4ED8] transition"
               >
                 Login
               </Link>
               <Link
                 to="/register"
-                className="border px-4 py-2 rounded-lg hover:bg-gray-100"
+                className="px-4 py-2 rounded-md text-sm font-medium border border-[#E5E7EB] text-[#374151] hover:bg-[#F9FAFB] transition"
               >
                 Register
               </Link>
-            </>
+            </div>
           )}
         </nav>
 
-        {/* Mobile Button */}
+        {/* Mobile Menu Button */}
         <button
-          className="md:hidden text-gray-700 text-3xl"
-          onClick={() => setMenuOpen(!menuOpen)}
+          className="md:hidden text-[#374151] p-2 rounded-md hover:bg-[#F3F4F6] transition"
+          onClick={() => setMenuOpen((prev) => !prev)}
+          aria-label="Toggle menu"
         >
-          {menuOpen ? <HiX /> : <HiMenu />}
+          {menuOpen ? <HiX size={22} /> : <HiMenu size={22} />}
         </button>
       </div>
 
       {/* Mobile Menu */}
-      {menuOpen && (
-        <nav className="md:hidden bg-white border-t px-6 py-4 flex flex-col gap-4">
-          <Link to="/" onClick={() => setMenuOpen(false)}>Home</Link>
-          <Link to="/about" onClick={() => setMenuOpen(false)}>About</Link>
-          <Link to="/contact" onClick={() => setMenuOpen(false)}>Contact</Link>
+      <div
+        className={`md:hidden overflow-hidden transition-all duration-200 ease-out ${
+          menuOpen ? "max-h-96 opacity-100" : "max-h-0 opacity-0"
+        }`}
+      >
+        <nav className="px-6 py-4 flex flex-col gap-3 bg-white border-t border-[#E5E7EB]">
+          {["Home", "About", "Contact"].map((item) => (
+            <Link
+              key={item}
+              to={item === "Home" ? "/" : `/${item.toLowerCase()}`}
+              onClick={() => setMenuOpen(false)}
+              className="py-2 text-sm font-medium text-[#374151]"
+            >
+              {item}
+            </Link>
+          ))}
+
+          <div className="pt-2 border-t border-[#E5E7EB] mt-2" />
 
           {user ? (
             <button
               onClick={handleLogout}
-              className="bg-amber-400 py-2 rounded-lg"
+              className="mt-2 py-2 rounded-md text-sm font-medium text-[#374151] hover:bg-[#F3F4F6]"
             >
               Logout
             </button>
           ) : (
-            <>
-              <Link to="/login" className="bg-sky-600 text-white py-2 rounded-lg text-center">
+            <div className="flex flex-col gap-2 mt-2">
+              <Link
+                to="/login"
+                onClick={() => setMenuOpen(false)}
+                className="py-2 rounded-md text-center text-sm font-medium text-white bg-[#2563EB]"
+              >
                 Login
               </Link>
-              <Link to="/register" className="border py-2 rounded-lg text-center">
+              <Link
+                to="/register"
+                onClick={() => setMenuOpen(false)}
+                className="py-2 rounded-md text-center text-sm font-medium border border-[#E5E7EB]"
+              >
                 Register
               </Link>
-            </>
+            </div>
           )}
         </nav>
-      )}
+      </div>
     </header>
   );
 };

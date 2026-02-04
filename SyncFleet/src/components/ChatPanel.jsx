@@ -3,9 +3,25 @@ import React, { useRef, useEffect } from "react";
 import PropTypes from "prop-types";
 import { IoMdSend } from "react-icons/io";
 
-const ChatPanel = ({ isOpen, onClose, messages, newMessage, setNewMessage, onSend, currentUser, inline = false, className = "" }) => {
+const ChatPanel = ({
+  isOpen,
+  onClose,
+  messages,
+  newMessage,
+  setNewMessage,
+  onSend,
+  currentUser,
+  inline = false,
+  className = "",
+}) => {
   const messagesEndRef = useRef(null);
   const chatInputRef = useRef(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      chatInputRef.current?.focus();
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -13,18 +29,21 @@ const ChatPanel = ({ isOpen, onClose, messages, newMessage, setNewMessage, onSen
 
   if (!isOpen) return null;
 
-  const rootClassFixed = `${className} fixed bottom-4 right-4 md:right-8 w-full md:w-[360px] max-w-md max-h-[60%] flex flex-col z-[9999]`;
+  const rootClassFixed = `${className} fixed bottom-4 right-4 md:right-8 w-full md:w-[380px] max-w-md max-h-[65%] flex flex-col z-[9999] animate-slideUpFade`;
   const rootClassInline = `${className} flex flex-col h-full w-full`;
 
   return (
     <div className={inline ? rootClassInline : rootClassFixed}>
-      <div className="flex flex-col h-full rounded-2xl shadow-lg bg-white border border-gray-200 overflow-hidden">
+      <div className="flex flex-col h-full rounded-2xl bg-white border border-[#E5E7EB] shadow-[0_8px_24px_rgba(0,0,0,0.08)] overflow-hidden">
+        
         {/* Header */}
-        <div className="flex justify-between items-center p-3 bg-sky-600 border-b border-gray-100">
-          <span className="text-white font-semibold text-md">Chatbox</span>
+        <div className="flex justify-between items-center px-4 py-3 bg-[#2563EB]">
+          <span className="text-white font-semibold text-sm tracking-wide">
+            Team Chat
+          </span>
           <button
             onClick={onClose}
-            className="text-white hover:text-sky-100 transition-all text-xl font-bold"
+            className="text-white/80 hover:text-white transition text-xl leading-none"
             aria-label="Close chat"
           >
             ×
@@ -32,29 +51,34 @@ const ChatPanel = ({ isOpen, onClose, messages, newMessage, setNewMessage, onSen
         </div>
 
         {/* Messages */}
-        <div className="flex-1 px-3 py-2 overflow-y-auto space-y-3 bg-white">
+        <div className="flex-1 px-4 py-3 overflow-y-auto space-y-3 bg-white">
           {messages.map((msg, idx) => {
             const isSelf =
-              msg.sender?.trim().toLowerCase() === currentUser?.trim().toLowerCase();
+              msg.sender?.trim().toLowerCase() ===
+              currentUser?.trim().toLowerCase();
 
             return (
               <div
                 key={idx}
-                className={`flex flex-col p-3 rounded-2xl max-w-[85%] ${
+                className={`flex flex-col gap-1 p-3 rounded-2xl max-w-[80%] text-sm shadow-sm animate-messageIn ${
                   isSelf
-                    ? "self-end bg-sky-600 text-white"
-                    : "self-start bg-gray-100 text-gray-800"
-                } shadow-sm`}
+                    ? "self-end bg-[#2563EB] text-white"
+                    : "self-start bg-gray-100 text-[#111827]"
+                }`}
               >
                 {!isSelf && (
-                  <span className="text-xs font-semibold text-gray-600 mb-1">
+                  <span className="text-[11px] font-semibold text-[#6B7280]">
                     {msg.sender}
                   </span>
                 )}
-                <span className="text-sm break-words">{msg.content}</span>
+
+                <span className="break-words leading-relaxed">
+                  {msg.content}
+                </span>
+
                 <span
-                  className={`text-[11px] mt-2 flex justify-end ${
-                    isSelf ? "text-sky-100" : "text-gray-500"
+                  className={`text-[10px] mt-1 self-end ${
+                    isSelf ? "text-blue-100" : "text-[#9CA3AF]"
                   }`}
                 >
                   {new Date(msg.timestamp).toLocaleTimeString([], {
@@ -69,19 +93,20 @@ const ChatPanel = ({ isOpen, onClose, messages, newMessage, setNewMessage, onSen
         </div>
 
         {/* Input */}
-        <div className="flex items-center p-3 bg-white border-t border-gray-100">
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-[#E5E7EB] bg-white">
           <input
             ref={chatInputRef}
             type="text"
-            placeholder="Type a message..."
+            placeholder="Type a message…"
             value={newMessage}
             onChange={(e) => setNewMessage(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && onSend()}
-            className="flex-1 px-3 py-2 rounded-full bg-gray-50 text-gray-800 placeholder-gray-400 outline-none border border-gray-200 focus:ring-2 focus:ring-sky-300 transition"
+            onKeyDown={(e) => e.key === "Enter" && newMessage.trim() && onSend()}
+            className="flex-1 px-4 py-2 rounded-full bg-[#F5F7FA] text-[#111827] placeholder-[#9CA3AF] border border-[#E5E7EB] focus:ring-2 focus:ring-blue-300 focus:outline-none transition"
           />
           <button
             onClick={onSend}
-            className="ml-2 px-3 py-2 rounded-full bg-sky-600 hover:bg-sky-700 text-white shadow-sm transition"
+            disabled={!newMessage.trim()}
+            className="p-2.5 rounded-full bg-[#2563EB] hover:bg-[#1D4ED8] disabled:bg-gray-300 disabled:cursor-not-allowed text-white transition active:scale-95"
             aria-label="Send message"
           >
             <IoMdSend className="text-lg" />
@@ -95,14 +120,7 @@ const ChatPanel = ({ isOpen, onClose, messages, newMessage, setNewMessage, onSen
 ChatPanel.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  messages: PropTypes.arrayOf(
-    PropTypes.shape({
-      sender: PropTypes.string,
-      content: PropTypes.string,
-      timestamp: PropTypes.string,
-      type: PropTypes.string,
-    })
-  ).isRequired,
+  messages: PropTypes.array.isRequired,
   newMessage: PropTypes.string.isRequired,
   setNewMessage: PropTypes.func.isRequired,
   onSend: PropTypes.func.isRequired,

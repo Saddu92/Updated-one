@@ -27,6 +27,8 @@ const CreateRoom = () => {
           .then((res) => res.json())
           .then((data) => setSourceSuggestions(data.slice(0, 5)))
           .catch(() => setSourceSuggestions([]));
+      } else {
+        setSourceSuggestions([]);
       }
     }, 400);
     return () => clearTimeout(timer);
@@ -43,6 +45,8 @@ const CreateRoom = () => {
           .then((res) => res.json())
           .then((data) => setDestinationSuggestions(data.slice(0, 5)))
           .catch(() => setDestinationSuggestions([]));
+      } else {
+        setDestinationSuggestions([]);
       }
     }, 400);
     return () => clearTimeout(timer);
@@ -50,63 +54,71 @@ const CreateRoom = () => {
 
   const handleCreateRoom = async () => {
     if (!roomName.trim() || !source || !destination) {
-      setResponse("Please enter Room Name and select valid Source and Destination.");
+      setResponse("Please enter a room name and select valid locations.");
       return;
     }
+
     setLoading(true);
     setResponse("");
     try {
-      const res = await API.post(CREATE_ROOM, { roomName, source, destination });
-      setResponse("Room Created: " + res.data.roomCode);
+      const res = await API.post(CREATE_ROOM, {
+        roomName,
+        source,
+        destination,
+      });
+      setResponse(`Room created • Code: ${res.data.roomCode}`);
       setTimeout(() => navigate("/dashboard"), 1200);
     } catch (err) {
-      setResponse("Error: " + (err.response?.data?.message || err.message));
+      setResponse(
+        err.response?.data?.message || "Failed to create room"
+      );
     }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0f172a] via-[#1e1b4b] to-[#312e81] p-4">
-      <div className="bg-gray-900/70 backdrop-blur-md shadow-2xl rounded-2xl p-8 w-full max-w-md border border-gray-700">
-        <h2 className="text-3xl font-bold mb-6 text-white text-center tracking-wide">
-          Create New Room
+    <div className="min-h-screen bg-[#F5F7FA] flex items-center justify-center px-4">
+      <div className="w-full max-w-md bg-white rounded-2xl shadow-lg border border-[#E5E7EB] p-6 md:p-8">
+
+        <h2 className="text-xl md:text-2xl font-semibold text-[#111827] text-center mb-6">
+          Create a New Room
         </h2>
 
         <div className="space-y-4">
+
           {/* Room Name */}
           <div>
-            <label className="block text-gray-300 mb-1 font-medium" htmlFor="roomName">
-              Room Name
+            <label className="block text-sm font-medium text-[#374151] mb-1">
+              Room name
             </label>
             <input
-              id="roomName"
               type="text"
-              placeholder="Enter room name"
               value={roomName}
               onChange={(e) => setRoomName(e.target.value)}
-              className="w-full rounded-lg border border-gray-600 bg-gray-800 text-white py-2 px-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-400 transition"
+              placeholder="e.g. Morning Commute"
+              className="w-full px-3 py-2 rounded-md border border-[#E5E7EB] text-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
             />
           </div>
 
           {/* Source */}
           <div className="relative">
-            <label className="block text-gray-300 mb-1 font-medium" htmlFor="source">
-              Source
+            <label className="block text-sm font-medium text-[#374151] mb-1">
+              Source location
             </label>
             <input
-              id="source"
               type="text"
-              placeholder="Search source location"
               value={sourceQuery}
               onChange={(e) => {
                 setSourceQuery(e.target.value);
                 setSource(null);
               }}
-              className="w-full rounded-lg border border-gray-600 bg-gray-800 text-white py-2 px-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-400 transition"
+              placeholder="Search starting point"
+              className="w-full px-3 py-2 rounded-md border border-[#E5E7EB] text-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
               autoComplete="off"
             />
+
             {sourceSuggestions.length > 0 && (
-              <ul className="absolute z-20 bg-gray-800 border border-gray-600 rounded-lg mt-1 w-full max-h-48 overflow-auto shadow-lg text-white">
+              <ul className="absolute z-20 mt-1 w-full bg-white border border-[#E5E7EB] rounded-md shadow-lg max-h-48 overflow-auto">
                 {sourceSuggestions.map((place) => (
                   <li
                     key={place.place_id}
@@ -119,7 +131,7 @@ const CreateRoom = () => {
                       setSourceQuery(place.display_name);
                       setSourceSuggestions([]);
                     }}
-                    className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-sm break-words"
+                    className="px-3 py-2 text-sm hover:bg-[#F1F5F9] cursor-pointer"
                   >
                     {place.display_name}
                   </li>
@@ -130,23 +142,23 @@ const CreateRoom = () => {
 
           {/* Destination */}
           <div className="relative">
-            <label className="block text-gray-300 mb-1 font-medium" htmlFor="destination">
-              Destination
+            <label className="block text-sm font-medium text-[#374151] mb-1">
+              Destination location
             </label>
             <input
-              id="destination"
               type="text"
-              placeholder="Search destination location"
               value={destinationQuery}
               onChange={(e) => {
                 setDestinationQuery(e.target.value);
                 setDestination(null);
               }}
-              className="w-full rounded-lg border border-gray-600 bg-gray-800 text-white py-2 px-3 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-purple-400 transition"
+              placeholder="Search destination"
+              className="w-full px-3 py-2 rounded-md border border-[#E5E7EB] text-sm focus:ring-2 focus:ring-blue-300 focus:outline-none"
               autoComplete="off"
             />
+
             {destinationSuggestions.length > 0 && (
-              <ul className="absolute z-20 bg-gray-800 border border-gray-600 rounded-lg mt-1 w-full max-h-48 overflow-auto shadow-lg text-white">
+              <ul className="absolute z-20 mt-1 w-full bg-white border border-[#E5E7EB] rounded-md shadow-lg max-h-48 overflow-auto">
                 {destinationSuggestions.map((place) => (
                   <li
                     key={place.place_id}
@@ -159,7 +171,7 @@ const CreateRoom = () => {
                       setDestinationQuery(place.display_name);
                       setDestinationSuggestions([]);
                     }}
-                    className="px-3 py-2 hover:bg-gray-700 cursor-pointer text-sm break-words"
+                    className="px-3 py-2 text-sm hover:bg-[#F1F5F9] cursor-pointer"
                   >
                     {place.display_name}
                   </li>
@@ -172,18 +184,18 @@ const CreateRoom = () => {
           <button
             onClick={handleCreateRoom}
             disabled={loading || !roomName || !source || !destination}
-            className="w-full mt-3 bg-gradient-to-r from-purple-600 via-purple-500 to-purple-700 text-white py-2 rounded-lg font-semibold hover:from-purple-700 hover:to-purple-600 transition disabled:opacity-60"
+            className="w-full mt-2 py-2.5 rounded-md text-sm font-semibold text-white bg-[#2563EB] hover:bg-[#1D4ED8] disabled:bg-gray-300 disabled:cursor-not-allowed transition"
           >
-            {loading ? "Creating..." : "Create Room"}
+            {loading ? "Creating room…" : "Create room"}
           </button>
 
-          {/* Response */}
+          {/* Feedback */}
           {response && (
             <div
-              className={`mt-3 text-center px-3 py-2 rounded-lg text-sm ${
-                response.startsWith("Room Created")
-                  ? "bg-green-700 text-white font-semibold"
-                  : "bg-red-600 text-white border border-red-500"
+              className={`mt-3 px-3 py-2 rounded-md text-sm text-center ${
+                response.startsWith("Room created")
+                  ? "bg-green-50 text-green-700 border border-green-200"
+                  : "bg-red-50 text-red-700 border border-red-200"
               }`}
             >
               {response}
