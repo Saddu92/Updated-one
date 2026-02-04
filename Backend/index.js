@@ -135,6 +135,10 @@ setInterval(async () => {
   if (!pendingConfirmations[roomCode]?.[userId]) {
     return;
   }
+  await redis.set(
+  `room:${roomCode}:user:${userId}:sos`,
+  "true"
+);
 
   // 🔴 ESCALATE TO SOS
   io.to(roomCode).emit("user-sos", {
@@ -164,6 +168,21 @@ io.on("connection", (socket) => {
   socket.on("join-room", async ({ roomCode, username, userId }) => {
     const geofenceState = await redis.hgetall(GEOFENCE_KEY(roomCode));
 socket.emit("geofence-init", geofenceState);
+const sosKeys = await redis.keys(`room:${roomCode}:user:*:sos`);
+const sosState = {};
+
+for (const key of sosKeys) {
+  const [, , , userId] = key.split(":");
+  const val = await redis.get(key);
+
+  if (val === "true") {
+    const socketId = userSocketMap.get(userId);
+    if (socketId) sosState[socketId] = true;
+  }
+}
+
+socket.emit("sos-init", sosState);
+
 
     if (!roomCode || !username || !userId) {
       console.warn("⚠ join-room failed:", { roomCode, username, userId });
@@ -298,12 +317,23 @@ if (isCreator && roomCreators[roomCode]) {
       const wasStationary = await redis.get(stationaryKey);
 
       if (wasStationary === "true") {
+        await redis.set(
+  `room:${roomCode}:user:${socket.data.userId}:sos`,
+  "false"
+);
+
         await redis.set(stationaryKey, "false");
 
         io.to(roomCode).emit("user-stationary-cleared", {
           socketId: socket.id,
           username: socket.data.username,
+          
         });
+ io.to(roomCode).emit("user-sos-cleared", {
+    socketId: socket.id,
+    username: socket.data.username,
+    userId: socket.data.userId,
+  });
 
         io.to(roomCode).emit("room-message", {
           from: "System",
@@ -391,6 +421,11 @@ if (isCreator && roomCreators[roomCode]) {
     const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
 
     if (response === "yes") {
+      await redis.set(
+  `room:${roomCode}:user:${userId}:sos`,
+  "false"
+);
+
       // ✅ USER IS OK → CLEAR STATIONARY IN REDIS
       await redis.set(stationaryKey, "false");
 

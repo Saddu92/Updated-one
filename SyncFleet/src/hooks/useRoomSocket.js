@@ -273,6 +273,10 @@ export const useRoomSocket = ({
 
       if (showToast) showToast(`${username} is moving again`, "info");
     };
+    const handleSosInit = (data) => {
+  setAlertUsers(data || {});
+};
+
 
     const handleUserSOSCleared = ({ socketId, username }) => {
       setUserLocations((prev) => ({
@@ -281,6 +285,7 @@ export const useRoomSocket = ({
           ...(prev[socketId] || {}),
           isSOS: false,
           isStationary: false,
+          stationarySince: null,
         },
       }));
 
@@ -293,6 +298,7 @@ export const useRoomSocket = ({
 
       if (showToast) showToast(`${username} is OK`, "info");
     };
+    
 
     const handleUserSOS = ({ socketId, username }) => {
       setUserLocations((prev) => ({
@@ -328,6 +334,9 @@ export const useRoomSocket = ({
     socket.on("user-status", handleUserStatus);
     socket.on("geofence-update", handleGeofenceUpdate);
     socket.on("geofence-init", handleGeofenceInit);
+    socket.on("sos-init", handleSosInit);
+
+
     socket.on("stationary-confirm", (data) => {
       try {
         window.dispatchEvent(
@@ -375,6 +384,8 @@ export const useRoomSocket = ({
       socket.off("room-users", handleRoomUsers);
       socket.off("geofence-update", handleGeofenceUpdate);
       socket.off("geofence-init", handleGeofenceInit);
+      socket.off("sos-init", handleSosInit);
+
 
       clearInterval(stationaryCheckIntervalRef.current);
       clearTimeout(reconnectTimeoutRef.current);
