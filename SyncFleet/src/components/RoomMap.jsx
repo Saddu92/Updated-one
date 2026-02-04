@@ -491,7 +491,8 @@ const RoomMap = ({ room }) => {
     };
     socket.emit("add-hazard", data);
     setHazards((prev) => [...prev, data]);
-  };
+    showToast("Hazard reported", "warning");
+  }; 
 
   const groupCenter = useMemo(() => {
     const activeUsersList = Object.values(userLocations).filter(
@@ -625,8 +626,14 @@ const RoomMap = ({ room }) => {
       {/* Stationary Modal */}
       <StationaryModal
         isOpen={showStationaryPrompt}
-        onYes={handleStationaryYes}
-        onNo={handleStationaryNo}
+        onYes={() => {
+          handleStationaryYes();
+          showToast("Thanks for confirming — stay safe!", "info");
+        }}
+        onNo={() => {
+          handleStationaryNo();
+          showToast("SOS sent — help is on the way", "danger");
+        }}
       />
 
       {/* ================= MAP (FULLSCREEN) ================= */}
@@ -893,6 +900,7 @@ const RoomMap = ({ room }) => {
             socket.emit("leave-room", { roomCode, userId: user.id });
             disconnectSocket();
           }
+          showToast("Left the room", "info");
           window.location.href = "/";
         }}
       />

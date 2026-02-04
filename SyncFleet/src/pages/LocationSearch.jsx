@@ -1,6 +1,7 @@
 // components/LocationSearch.jsx
 import React, { useState } from "react";
 import axios from "axios";
+import toast from "react-hot-toast";
 
 const LocationSearch = ({ onSelect }) => {
   const [query, setQuery] = useState("");
@@ -30,6 +31,7 @@ const LocationSearch = ({ onSelect }) => {
         setSuggestions(results);
       } catch (err) {
         console.error("Geocoding error:", err);
+        toast.error("Location search failed");
         setSuggestions([]);
       }
     } else {

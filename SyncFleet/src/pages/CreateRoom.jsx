@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import API from "../utils/axios.js";
 import { CREATE_ROOM } from "@/utils/constant";
+import toast from "react-hot-toast";
 
 const CreateRoom = () => {
   const [roomName, setRoomName] = useState("");
@@ -66,12 +67,14 @@ const CreateRoom = () => {
         source,
         destination,
       });
-      setResponse(`Room created • Code: ${res.data.roomCode}`);
+      const successMsg = `Room created • Code: ${res.data.roomCode}`;
+      setResponse(successMsg);
+      toast.success(successMsg);
       setTimeout(() => navigate("/dashboard"), 1200);
     } catch (err) {
-      setResponse(
-        err.response?.data?.message || "Failed to create room"
-      );
+      const errMsg = err.response?.data?.message || "Failed to create room";
+      setResponse(errMsg);
+      toast.error(errMsg);
     }
     setLoading(false);
   };

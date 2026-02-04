@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Polyline, Tooltip } from "react-leaflet";
 import API from "@/utils/axios.js";
 import { DIRECTIONS, GEOCODE } from "../utils/constant.js";
+import toast from "react-hot-toast";
 
 // ...imports unchanged
 
@@ -36,6 +37,7 @@ const RoutePath = ({ source, destination }) => {
 
         if (!src?.lat || !src?.lng || !dest?.lat || !dest?.lng) {
           console.error("❌ Geocoding failed", { src, dest });
+          toast.error("Geocoding failed — cannot compute route");
           setPath([]);
           return;
         }
@@ -58,6 +60,7 @@ const RoutePath = ({ source, destination }) => {
           "❌ Error fetching route:",
           err.response?.data || err.message
         );
+        toast.error(err.response?.data?.message || "Error fetching route");
         setPath([]);
       } finally {
         setLoading(false);

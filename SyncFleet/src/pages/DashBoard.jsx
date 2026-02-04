@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router-dom";
 import React, { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import API from "../utils/axios.js";
 import { MY_ROOM } from "@/utils/constant.js";
 import { useAuthStore } from "@/store/auth";
@@ -28,6 +29,7 @@ const Dashboard = () => {
         setMyRooms(res.data.rooms || []);
       } catch (err) {
         console.error("Failed to fetch rooms", err);
+        toast.error("Failed to fetch rooms");
       }
     };
 

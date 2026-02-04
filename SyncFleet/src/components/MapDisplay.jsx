@@ -1,5 +1,4 @@
 // components/MapDisplay.jsx
-import React from "react";
 import PropTypes from "prop-types";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import L from "leaflet";
@@ -12,6 +11,9 @@ import UserMarker from "./UserMarker.jsx";
 import UserTrail from "./UserTrail.jsx";
 import HazardLayer from "./HazardLayer.jsx";
 import RoutePath from "./RoutePath.jsx";
+import Loader from "@/components/Loader";
+import mapLoader from "@/assets/lottie/Travel.json";
+import { useState } from "react";
 const STATUS_COLORS = {
   normal: "#2563EB",     // Cool Blue
   stationary: "#DC2626", // Red (alert)
@@ -20,6 +22,7 @@ const STATUS_COLORS = {
   sos: "#DC2626",        // SOS ONLY
 };
 const TRAIL_WEIGHT = window.innerWidth < 768 ? 3 : 4;
+
 
 
 const MapDisplay = ({
@@ -39,6 +42,7 @@ const MapDisplay = ({
   isRoomCreator,
   creatorSocketId, // ✅ NEW
 }) => {
+  const [mapReady, setMapReady] = useState(false);
   const calculateDeviation = (userCoords) => {
     // ✅ Calculate deviation from geofence center (creator's position)
     if (!geofence.center || !userCoords) return 0;
@@ -46,14 +50,29 @@ const MapDisplay = ({
   };
 
   return (
-    <MapContainer
-  center={coords}
-  zoom={15}
-  ref={mapRef}
-  zoomControl={false}
-  className="h-full w-full rounded-none md:rounded-lg"
->
+  <div className="relative h-full w-full">
+    {/* ================= MAP LOADER ================= */}
+    {!mapReady && (
+      <div className="absolute inset-0 z-[9999] bg-white/90 backdrop-blur flex items-center justify-center">
+        <Loader
+          animation={mapLoader}
+          size={140}
+          text="Loading live map…"
+        />
+      </div>
+    )}
 
+    <MapContainer
+      center={coords}
+      zoom={15}
+      ref={mapRef}
+      zoomControl={false}
+      className="h-full w-full rounded-none md:rounded-lg"
+      whenReady={() => {
+        // small delay = smoother UX
+        setTimeout(() => setMapReady(true), 300);
+      }}
+    >
       <TileLayer
         url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -64,7 +83,7 @@ const MapDisplay = ({
         <RoutePath source={sourceCoords} destination={destinationCoords} />
       )}
 
-      {/* Geofence - Show if center exists */}
+      {/* Geofence */}
       {geofence.center && (
         <GeofenceCircle center={geofence.center} radius={geofence.radius} />
       )}
@@ -75,27 +94,27 @@ const MapDisplay = ({
       {/* Recenter */}
       <RecenterMap coords={coords} shouldRecenter={shouldRecenter} />
 
-<UserMarker
-  username={isRoomCreator ? "You (Creator)" : "You"}
-  coords={coords}
-  color={
-    userLocations[mySocketId]?.isStationary
-      ? STATUS_COLORS.stationary
-      : alertUsers[mySocketId] && !isRoomCreator
-      ? STATUS_COLORS.outside
-      : getUserColor(mySocketId)
-  }
-  markerType={
-    userLocations[mySocketId]?.isStationary
-      ? "stationary"
-      : alertUsers[mySocketId] && !isRoomCreator
-      ? "outside"
-      : "normal"
-  }
-  batteryLevel={userLocations[mySocketId]?.battery?.level}
-  networkStatus={userLocations[mySocketId]?.networkStatus}
-/>
-
+      {/* Current User */}
+      <UserMarker
+        username={isRoomCreator ? "You (Creator)" : "You"}
+        coords={coords}
+        color={
+          userLocations[mySocketId]?.isStationary
+            ? STATUS_COLORS.stationary
+            : alertUsers[mySocketId] && !isRoomCreator
+            ? STATUS_COLORS.outside
+            : getUserColor(mySocketId)
+        }
+        markerType={
+          userLocations[mySocketId]?.isStationary
+            ? "stationary"
+            : alertUsers[mySocketId] && !isRoomCreator
+            ? "outside"
+            : "normal"
+        }
+        batteryLevel={userLocations[mySocketId]?.battery?.level}
+        networkStatus={userLocations[mySocketId]?.networkStatus}
+      />
 
       {/* Other Users */}
       {Object.entries(userLocations)
@@ -103,21 +122,17 @@ const MapDisplay = ({
         .map(([id, u]) => {
           if (!u?.coords) return null;
           const now = Date.now();
-          const isActive = now - u.lastSeen < INACTIVE_THRESHOLD;
-          if (!isActive) return null;
-
-          
+          if (now - u.lastSeen >= INACTIVE_THRESHOLD) return null;
 
           const deviationDistance = calculateDeviation(u.coords);
           const isCreator = id === creatorSocketId;
 
-          let markerType = null;
+          let markerType = "normal";
           if (u.isStationary) markerType = "stationary";
           else if (u.isSOS) markerType = "sos";
-          // ✅ Only non-creators can be "outside" - and only if geofence is active
-          else if (!isCreator && alertUsers[id])markerType = "outside";
-          else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD) markerType = "far";
-          else markerType = "normal";
+          else if (!isCreator && alertUsers[id]) markerType = "outside";
+          else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD)
+            markerType = "far";
 
           return (
             <React.Fragment key={id}>
@@ -125,41 +140,36 @@ const MapDisplay = ({
                 username={isCreator ? `${u.username} (Creator)` : u.username}
                 coords={u.coords}
                 color={getUserColor(id)}
-                markerType={u.isSOS ? "sos" : markerType}
+                markerType={markerType}
                 deviationDistance={deviationDistance}
                 batteryLevel={u.battery?.level}
                 networkStatus={u.networkStatus}
-
-               
               />
 
-              {/* Trail */}
-              
               {u.path && u.path.length > 1 && (
                 <UserTrail
-  positions={u.path}
-  color={
-    markerType === "stationary"
-      ? STATUS_COLORS.stationary
-      : markerType === "far"
-      ? STATUS_COLORS.far
-      : markerType === "outside"
-      ? STATUS_COLORS.outside
-      : getUserColor(id)
-  }
-  weight={TRAIL_WEIGHT}
-  dashArray={
-    markerType !== "normal" ? "6,6" : null
-  }
-  isAlert={markerType !== "normal"}
-/>
-
+                  positions={u.path}
+                  color={
+                    markerType === "stationary"
+                      ? STATUS_COLORS.stationary
+                      : markerType === "far"
+                      ? STATUS_COLORS.far
+                      : markerType === "outside"
+                      ? STATUS_COLORS.outside
+                      : getUserColor(id)
+                  }
+                  weight={TRAIL_WEIGHT}
+                  dashArray={markerType !== "normal" ? "6,6" : null}
+                  isAlert={markerType !== "normal"}
+                />
               )}
             </React.Fragment>
           );
         })}
     </MapContainer>
-  );
+  </div>
+);
+
 };
 
 MapDisplay.propTypes = {
