@@ -10,6 +10,7 @@ import haversine from "haversine-distance";
 import orsRoutes from "./routes/orsRoutes.js";
 import Room from "./models/Room.js";
 import redis from "./utils/redis.js";
+import crypto from "crypto"; // add at top if not present
 
 dotenv.config();
 connectDB();
@@ -165,7 +166,10 @@ setInterval(async () => {
 io.on("connection", (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
 
+
   socket.on("join-room", async ({ roomCode, username, userId }) => {
+    await redis.sadd(`room:${roomCode}:chat:users`, userId);
+
     const geofenceState = await redis.hgetall(GEOFENCE_KEY(roomCode));
 socket.emit("geofence-init", geofenceState);
 const sosKeys = await redis.keys(`room:${roomCode}:user:*:sos`);
@@ -261,18 +265,40 @@ socket.emit("sos-init", sosState);
         console.error("Error checking room creator:", err);
       });
   });
+  socket.on("get-chat-history", async ({ roomCode }) => {
+  const raw = await redis.lrange(
+    `room:${roomCode}:chat:messages`,
+    0,
+    -1
+  );
+
+  const messages = raw.map(JSON.parse);
+  socket.emit("chat-history", messages);
+});
+
+socket.on("get-unread-count", async ({ roomCode, userId }) => {
+  const count =
+    (await redis.get(`room:${roomCode}:chat:unread:${userId}`)) || 0;
+
+  socket.emit("unread-count", Number(count));
+});
+socket.on("mark-chat-seen", async ({ roomCode, userId }) => {
+  await redis.del(`room:${roomCode}:chat:unread:${userId}`);
+  socket.emit("unread-count", 0);
+});
+
 
 
 
   socket.on("location-update", async ({ roomCode, coords }) => {
-    if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
-      console.warn("⚠ location-update failed:", {
-        roomCode,
-        coords,
-        user: socket.data,
-      });
-      return;
-    }
+    // if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
+    //   console.warn("⚠ location-update failed:", {
+    //     roomCode,
+    //     coords,
+    //     user: socket.data,
+    //   });
+    //   return;
+    // }
 
 
     const isCreator = socket.data.isCreator || false;
@@ -467,38 +493,46 @@ if (isCreator && roomCreators[roomCode]) {
     }
   });
 
-  socket.on("chat-message", ({ roomCode, message }) => {
-    if (!roomCode || !message || !socket.data.username) {
-      console.warn("⚠️ chat-message failed:", {
-        roomCode,
-        message,
-        user: socket.data,
-      });
-      return;
+
+
+socket.on("chat-message", async ({ roomCode, message }) => {
+  if (!roomCode || !message?.content) return;
+
+  const chatMessage = {
+    id: crypto.randomUUID(),
+    sender: socket.data.username,
+    senderId: socket.data.userId,
+    content: message.content,
+    type: message.type || "text",
+    timestamp: Date.now(),
+  };
+
+  // 🔹 Store message in Redis
+  await redis.rpush(
+    `room:${roomCode}:chat:messages`,
+    JSON.stringify(chatMessage)
+  );
+
+  // 🔹 Increase unread count for others
+  const users = await redis.smembers(`room:${roomCode}:chat:users`);
+for (const uid of users) {
+  if (uid !== chatMessage.senderId) {
+    const newCount = await redis.incr(
+      `room:${roomCode}:chat:unread:${uid}`
+    );
+
+    const targetSocket = userSocketMap.get(uid);
+
+    if (targetSocket) {
+      io.to(targetSocket).emit("unread-count", newCount);
     }
+  }
+}
 
-    console.log(`💬 Chat from ${socket.data.username}: ${message.content}`);
+  // 🔹 Emit clean chat event
+  io.to(roomCode).emit("chat-message", chatMessage);
+});
 
-    if (message.type === "sos") {
-      io.to(roomCode).emit("user-sos", {
-        socketId: socket.id,
-        username: socket.data.username,
-        userId: socket.data.userId,
-      });
-
-      console.log(
-        `🚨 SOS Alert from ${socket.data.username} in room ${roomCode}`
-      );
-    }
-
-    io.to(roomCode).emit("room-message", {
-      from: socket.id,
-      message: {
-        ...message,
-        sender: socket.data.username,
-      },
-    });
-  });
 
   socket.on("clear-sos", ({ roomCode }) => {
     if (!roomCode || !socket.data.username) return;
@@ -568,7 +602,8 @@ if (isCreator && roomCreators[roomCode]) {
 
     // 🔹 Cleanup server state
     userSocketMap.delete(userId);
-    
+    await redis.srem(`room:${roomCode}:chat:users`, userId);
+
     // 🔹 Clear pending stationary confirmation (IMPORTANT)
     if (pendingConfirmations[roomCode]?.[userId]) {
       clearTimeout(pendingConfirmations[roomCode][userId]);

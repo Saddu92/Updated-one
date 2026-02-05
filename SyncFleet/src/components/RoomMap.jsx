@@ -131,6 +131,8 @@ const RoomMap = ({ room }) => {
   const [chatOpen, setChatOpen] = useState(false);
   const [showLeaveModal, setShowLeaveModal] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+
   const [trailDuration, setTrailDuration] = useState(DEFAULT_TRAIL_DURATION);
   const [geofence, setGeofence] = useState({
     center: null,
@@ -205,18 +207,6 @@ const RoomMap = ({ room }) => {
     trailExpiryMs,
     showToast,
     playAlertSound,
-    onRoomMessage: ({ from, message }) => {
-      if (from !== socket.id) {
-        setMessages((prev) => [
-          ...prev,
-          {
-            ...message,
-            sender:
-              message.sender || userLocations[from]?.username || "Unknown",
-          },
-        ]);
-      }
-    },
     onAnomalyAlert: (data) => {
       setMessages((prev) => [
         ...prev,
@@ -238,6 +228,66 @@ const RoomMap = ({ room }) => {
       console.log(`👑 Creator identified: ${socketId}`);
     },
   });
+
+  useEffect(() => {
+  // Load chat history once
+  socket.emit("get-chat-history", { roomCode });
+
+  socket.on("chat-history", (msgs) => {
+    setMessages(msgs);
+  });
+
+socket.on("chat-message", (msg) => {
+  setMessages((prev) => {
+    if (prev.some((m) => m.id === msg.id)) return prev;
+    return [...prev, msg];
+  });
+
+  // ⭐ increment unread when chat closed
+  if (!chatOpen && msg.senderId !== user?.id) {
+    setUnreadCount((c) => c + 1);
+  }
+});
+
+  return () => {
+    socket.off("chat-history");
+    socket.off("chat-message");
+  };
+}, [socket, roomCode]);
+
+useEffect(() => {
+  if (!user?.id || !socket.connected) return;
+
+  const handleUnread = (count) => {
+    setUnreadCount(count);
+  };
+
+  // wait slightly to ensure join-room completed
+  const timeout = setTimeout(() => {
+    socket.emit("get-unread-count", {
+      roomCode,
+      userId: user.id,
+    });
+  }, 500);
+
+  socket.on("unread-count", handleUnread);
+
+  return () => {
+    clearTimeout(timeout);
+    socket.off("unread-count", handleUnread);
+  };
+}, [socket.connected, roomCode, user?.id]);
+
+useEffect(() => {
+  if (chatOpen && user?.id) {
+    socket.emit("mark-chat-seen", {
+      roomCode,
+      userId: user.id,
+    });
+    setUnreadCount(0);
+  }
+}, [chatOpen, socket, roomCode, user]);
+
 
   // Sync creator socket ID from hook
   useEffect(() => {
@@ -528,7 +578,6 @@ const RoomMap = ({ room }) => {
 
     socket.emit("chat-message", { roomCode, message });
 
-    setMessages((prev) => [...prev, message]);
     setNewMessage("");
   }, [newMessage, socket, roomCode, user, showToast]);
 
@@ -699,11 +748,12 @@ const RoomMap = ({ room }) => {
         >
           <FiMessageSquare className="text-[#2563EB] text-xl" />
 
-          {messages.length > 0 && (
-            <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center">
-              {messages.length}
-            </span>
-          )}
+        {unreadCount > 0 && (
+  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-semibold rounded-full h-5 w-5 flex items-center justify-center">
+    {unreadCount > 9 ? "9+" : unreadCount}
+  </span>
+)}
+
         </button>
 
         {/* Users */}
@@ -772,11 +822,12 @@ const RoomMap = ({ room }) => {
             <div className="relative">
             <FiMessageSquare className="text-[#2563EB] text-xl" />
 
-              {messages.length > 0 && (
-                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                  {messages.length > 9 ? '9+' : messages.length}
-                </span>
-              )}
+             {unreadCount > 0 && (
+  <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+    {unreadCount > 9 ? "9+" : unreadCount}
+  </span>
+)}
+
             </div>
             <span className="text-xs font-medium text-gray-700">Chat</span>
           </button>

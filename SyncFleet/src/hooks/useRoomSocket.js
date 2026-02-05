@@ -208,27 +208,6 @@ export const useRoomSocket = ({
     const handleGeofenceInit = (data) => {
       setAlertUsers(data || {});
     };
-   const handleRoomMessage = (payload) => {
-  const message = payload.message ?? payload; // ✅ normalize
-
-  if (!message?.type) return; // safety guard
-
-  if (message.type === "hazard" && payload.from !== socket.id) {
-    showToast(`⚠️ ${message.content}`, "warning");
-  }
-
-  if (message.type === "sos" && payload.from !== socket.id) {
-    playAlertSound();
-    showToast(`🚨 SOS triggered by ${message.sender}`, "danger");
-  }
-
-  if (onRoomMessage) {
-    onRoomMessage({
-      from: payload.from,
-      message,
-    });
-  }
-};
 
 
     const handleRoomUsers = (users) => {
@@ -349,7 +328,7 @@ export const useRoomSocket = ({
     socket.on("user-stationary-cleared", handleUserStationaryCleared);
     socket.on("user-sos-cleared", handleUserSOSCleared);
     socket.on("user-sos", handleUserSOS);
-    socket.on("room-message", handleRoomMessage);
+    
     socket.on("room-users", handleRoomUsers);
 
     stationaryCheckIntervalRef.current = setInterval(() => {
@@ -380,7 +359,6 @@ export const useRoomSocket = ({
       socket.off("user-stationary-cleared", handleUserStationaryCleared);
       socket.off("user-sos-cleared", handleUserSOSCleared);
       socket.off("user-sos", handleUserSOS);
-      socket.off("room-message", handleRoomMessage);
       socket.off("room-users", handleRoomUsers);
       socket.off("geofence-update", handleGeofenceUpdate);
       socket.off("geofence-init", handleGeofenceInit);
@@ -401,7 +379,6 @@ export const useRoomSocket = ({
     onAnomalyAlert,
     onUserJoined,
     onUserLeft,
-    onRoomMessage,
     onRoomUsers,
     onCreatorIdentified,
     creatorSocketId,
