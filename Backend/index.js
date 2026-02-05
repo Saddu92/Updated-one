@@ -31,7 +31,7 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/room", roomRoutes);
 app.use("/api/ors", orsRoutes);
-
+app.set("io", io);
 const PORT = process.env.PORT || 5000;
 const userSocketMap = new Map();
 const roomCreators = {};
@@ -265,6 +265,7 @@ socket.emit("sos-init", sosState);
         console.error("Error checking room creator:", err);
       });
   });
+
   socket.on("get-chat-history", async ({ roomCode }) => {
   const raw = await redis.lrange(
     `room:${roomCode}:chat:messages`,

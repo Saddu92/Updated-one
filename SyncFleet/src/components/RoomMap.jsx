@@ -229,6 +229,18 @@ const RoomMap = ({ room }) => {
     },
   });
 
+  // for deleting the people from the room
+  useEffect(() => {
+  socket.on("room-deleted", ({ roomCode }) => {
+    showToast("This room was deleted by the creator", "warning");
+    setTimeout(() => {
+      window.location.href = "/dashboard";
+    }, 1500);
+  });
+
+  return () => socket.off("room-deleted");
+}, [socket]);
+
   useEffect(() => {
   // Load chat history once
   socket.emit("get-chat-history", { roomCode });

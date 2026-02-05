@@ -1,6 +1,6 @@
 import Room from "../models/Room.js";
 import User from "../models/User.js";
-
+import redis from "../utils/redis.js";
 
 const generateCode = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
@@ -26,6 +26,7 @@ export const createRoom = async (req, res) => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
 
     const room = new Room({
+       name: req.body.name,
       code,
       source: {
         displayName: source.displayName,
@@ -160,3 +161,46 @@ export const getRoomByCode = async (req, res) => {
   }
 };
 
+
+export const deleteRoom = async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const userId = req.user.id;
+
+    const room = await Room.findById(roomId);
+    if (!room) {
+      return res.status(404).json({ message: "Room not found" });
+    }
+
+    if (room.createdBy.toString() !== userId) {
+      return res.status(403).json({ message: "Not authorized" });
+    }
+
+    const roomCode = room.code;
+    const io = req.app.get("io");
+
+    // 🔴 1. Notify ALL members in real time
+    io.to(roomCode).emit("room-deleted", {
+      roomId,
+      roomCode,
+    });
+
+    // 🔴 2. Clean Redis
+    const keys = await redis.keys(`room:${roomCode}:*`);
+    if (keys.length) await redis.del(keys);
+
+    // 🔴 3. Remove room from users
+    await User.updateMany(
+      { joinedRooms: room._id },
+      { $pull: { joinedRooms: room._id } }
+    );
+
+    // 🔴 4. Delete room
+    await Room.findByIdAndDelete(roomId);
+
+    return res.status(200).json({ message: "Room deleted" });
+  } catch (err) {
+    console.error("Delete Room Error:", err);
+    res.status(500).json({ message: "Delete failed" });
+  }
+};

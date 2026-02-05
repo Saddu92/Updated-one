@@ -63,7 +63,7 @@ const CreateRoom = () => {
     setResponse("");
     try {
       const res = await API.post(CREATE_ROOM, {
-        roomName,
+        name:roomName,
         source,
         destination,
       });

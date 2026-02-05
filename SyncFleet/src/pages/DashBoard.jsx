@@ -1,20 +1,21 @@
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import React, { useEffect, useState } from "react";
 import toast from "react-hot-toast";
 import API from "../utils/axios.js";
 import { MY_ROOM } from "@/utils/constant.js";
 import { useAuthStore } from "@/store/auth";
-import { Link } from "react-router-dom";
 import Footer from "@/components/Footer.jsx";
 import { HiMenu, HiX } from "react-icons/hi";
 
 const Dashboard = () => {
   const navigate = useNavigate();
+  const { user, logout } = useAuthStore();
+
   const [myRooms, setMyRooms] = useState([]);
   const [activeRoom, setActiveRoom] = useState(null);
-  const { user, logout } = useAuthStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  /* ================= FETCH ROOMS ================= */
   useEffect(() => {
     if (!user) {
       navigate("/login");
@@ -36,14 +37,30 @@ const Dashboard = () => {
     fetchRooms();
   }, [user, navigate]);
 
+  /* ================= HANDLERS ================= */
   const handleJoinRoom = (roomCode) => {
     setActiveRoom(roomCode);
     navigate(`/room/${roomCode}/map`);
   };
 
+  const handleDeleteRoom = async (roomId) => {
+    if (!window.confirm("Are you sure you want to delete this room?")) return;
+
+    try {
+      // ⚠️ baseURL already contains /api
+      await API.delete(`/room/${roomId}`, {
+        headers: { Authorization: `Bearer ${user.token}` },
+      });
+
+      toast.success("Room deleted successfully");
+      setMyRooms((prev) => prev.filter((r) => r._id !== roomId));
+    } catch (err) {
+      toast.error(err.response?.data?.message || "Failed to delete room");
+    }
+  };
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F5F7FA] text-[#111827]">
-
       {/* ================= HEADER ================= */}
       <header className="sticky top-0 z-50 bg-white border-b border-[#E5E7EB]">
         <div className="max-w-7xl mx-auto px-4 h-14 md:h-16 flex items-center justify-between">
@@ -51,7 +68,7 @@ const Dashboard = () => {
             SyncFleet
           </Link>
 
-          {/* Desktop */}
+          {/* Desktop Nav */}
           <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
             <button onClick={() => navigate("/")} className="text-[#6B7280] hover:text-[#2563EB]">
               Home
@@ -70,7 +87,7 @@ const Dashboard = () => {
             </button>
           </nav>
 
-          {/* Mobile */}
+          {/* Mobile Menu */}
           <button
             className="md:hidden p-2 rounded-md hover:bg-[#F3F4F6]"
             onClick={() => setIsMenuOpen((v) => !v)}
@@ -102,11 +119,17 @@ const Dashboard = () => {
 
       {/* ================= CONTENT ================= */}
       <main className="flex-1 max-w-7xl mx-auto w-full px-4 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Greeting */}
+        <div className="mb-6">
+          <h1 className="text-2xl font-semibold">👋 Hi, {user?.name}</h1>
+          <p className="text-sm text-[#6B7280] mt-1">
+            Welcome back to SyncFleet dashboard
+          </p>
+        </div>
 
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* LEFT */}
           <div className="lg:col-span-2 space-y-6">
-
             {/* Stats */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <StatBox title="Total Rooms" value={myRooms.length} />
@@ -135,14 +158,6 @@ const Dashboard = () => {
                 Join Room
               </button>
             </div>
-
-            {/* Activity */}
-            <div className="bg-white border border-[#E5E7EB] rounded-xl p-5">
-              <h3 className="text-sm font-semibold mb-2">Recent activity</h3>
-              <p className="text-sm text-[#6B7280]">
-                No recent activity yet.
-              </p>
-            </div>
           </div>
 
           {/* RIGHT */}
@@ -159,25 +174,41 @@ const Dashboard = () => {
                   key={room._id}
                   className="flex items-center justify-between p-4 bg-white border border-[#E5E7EB] rounded-xl hover:shadow-sm transition"
                 >
+                  {/* Room Info */}
                   <div
                     onClick={() => handleJoinRoom(room.code)}
-                    className="cursor-pointer"
+                    className="cursor-pointer flex-1"
                   >
-                    <p className="font-medium">
-                      {room.name || room.code}
+                    <p className="font-semibold truncate">
+                      {room.name || "Unnamed Room"}
+                    </p>
+                    <p className="text-xs text-[#6B7280] mt-0.5">
+                      Code: {room.code}
                     </p>
                   </div>
 
-                  <button
-                    onClick={() => handleJoinRoom(room.code)}
-                    className={`px-3 py-1.5 text-xs rounded-full font-semibold ${
-                      activeRoom === room.code
-                        ? "bg-green-100 text-green-700"
-                        : "bg-blue-100 text-blue-700"
-                    }`}
-                  >
-                    {activeRoom === room.code ? "Active" : "Join"}
-                  </button>
+                  {/* Actions */}
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => handleJoinRoom(room.code)}
+                      className={`px-3 py-1.5 text-xs rounded-full font-semibold transition ${
+                        activeRoom === room.code
+                          ? "bg-green-100 text-green-700"
+                          : "bg-blue-100 text-blue-700 hover:bg-blue-200"
+                      }`}
+                    >
+                      {activeRoom === room.code ? "Active" : "Join"}
+                    </button>
+
+                    {room.createdBy?._id === user.id && (
+                      <button
+                        onClick={() => handleDeleteRoom(room._id)}
+                        className="px-3 py-1.5 text-xs rounded-full font-semibold bg-red-100 text-red-700 hover:bg-red-200 transition"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -190,7 +221,7 @@ const Dashboard = () => {
   );
 };
 
-/* ---------- Stat Box ---------- */
+/* ================= STAT BOX ================= */
 const StatBox = ({ title, value }) => (
   <div className="bg-white border border-[#E5E7EB] rounded-xl p-5 text-center">
     <p className="text-sm text-[#6B7280]">{title}</p>
