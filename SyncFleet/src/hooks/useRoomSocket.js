@@ -84,16 +84,27 @@ export const useRoomSocket = ({
       if (onUserJoined) onUserJoined({ username, socketId, isCreator });
     };
 
-    const handleUserStatus = ({ userId, status }) => {
-      setUserLocations((prev) => ({
-        ...prev,
-        [userId]: {
-          ...(prev[userId] || {}),
-          networkStatus: status, // "offline"
-        },
-      }));
+  const handleUserStatus = ({ userId, status }) => {
+  setUserLocations((prev) => {
+    const updated = { ...prev };
+
+    // find socketId that belongs to this userId
+    const entry = Object.entries(prev).find(
+      ([, value]) => value?.userId === userId
+    );
+
+    if (!entry) return prev;
+
+    const [socketId, data] = entry;
+
+    updated[socketId] = {
+      ...data,
+      networkStatus: status,
     };
 
+    return updated;
+  });
+};
     const handleUserLeft = ({ socketId }) => {
       delete lastSeenRef.current[socketId];
       setUserLocations((prev) => {
@@ -115,10 +126,12 @@ export const useRoomSocket = ({
     };
 
     const handleLocationUpdate = ({
+      
       socketId,
       username,
       coords,
       isCreator,
+      userId
     }) => {
       const now = Date.now();
       lastSeenRef.current[socketId] = now;
@@ -135,6 +148,7 @@ export const useRoomSocket = ({
           ...prev,
           [socketId]: {
             ...existing,
+              userId: existing.userId || userId, 
             username,
             coords,
             isCreator: isCreator || false, // ✅ Store creator flag

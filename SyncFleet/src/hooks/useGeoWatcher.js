@@ -1,92 +1,105 @@
 // hooks/useGeoWatcher.js
 import { useEffect, useRef, useState } from "react";
-import { GEOLOCATION_TIMEOUT } from "../utils/helper.js";
+import haversine from "haversine-distance";
 
 export const useGeoWatcher = ({ enabled = true, user, onPositionUpdate }) => {
   const [coords, setCoords] = useState(null);
   const [locationError, setLocationError] = useState(null);
+
   const geolocationWatchId = useRef(null);
   const timeoutIdRef = useRef(null);
 
-  useEffect(() => {
-  // console.log("🧭 useGeoWatcher EFFECT STARTED");
-  // console.log("enabled:", enabled);
-  // console.log("navigator.geolocation:", !!navigator.geolocation);
+  // ✅ NEW: throttling & dedup refs
+  const lastEmitTimeRef = useRef(0);
+  const lastCoordsRef = useRef(null);
 
-    if (!enabled) return;
+  useEffect(() => {
+    if (!enabled || !navigator.geolocation) return;
 
     const handleSuccess = (position) => {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
-      const coords = {
+
+      const newCoords = {
         lat: position.coords.latitude,
         lng: position.coords.longitude,
       };
-      setCoords(coords);
-      setLocationError(null); // ✅ Clear any previous errors
-      if (user && onPositionUpdate) {
-        onPositionUpdate(coords);
+
+      setCoords(newCoords);
+      setLocationError(null);
+
+      // 🚫 no user or callback
+      if (!user || !onPositionUpdate) return;
+
+      const now = Date.now();
+
+      // ⏱️ HARD THROTTLE: 1 update / 2 seconds
+      if (now - lastEmitTimeRef.current < 2000) return;
+
+      // 📏 IGNORE GPS JITTER (<5 meters)
+      if (lastCoordsRef.current) {
+        const distance = haversine(lastCoordsRef.current, newCoords);
+        if (distance < 5) return;
       }
+
+      // ✅ allow emit
+      lastEmitTimeRef.current = now;
+      lastCoordsRef.current = newCoords;
+
+      onPositionUpdate(newCoords);
     };
 
     const handleError = (error) => {
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
+
       let errorMessage = "Unable to get location.";
       switch (error.code) {
         case error.PERMISSION_DENIED:
           errorMessage =
-            "Location access denied. Please enable location permissions in your browser settings.";
+            "Location access denied. Please enable location permissions.";
           break;
         case error.POSITION_UNAVAILABLE:
-          errorMessage =
-            "Location unavailable. Please check your device settings.";
+          errorMessage = "Location unavailable.";
           break;
         case error.TIMEOUT:
-          errorMessage =
-            "Location request timed out. Please check if location services are enabled and try again.";
+          errorMessage = "Location request timed out.";
           break;
         default:
-          errorMessage = "An error occurred while getting your location.";
+          errorMessage = "An unknown location error occurred.";
       }
+
       setLocationError(errorMessage);
-      // ✅ Don't set coords to 0,0 - let user see the error instead
     };
 
-    // ✅ Shorter timeout - 15 seconds instead of relying on GEOLOCATION_TIMEOUT
+    // ⏲️ safety timeout
     timeoutIdRef.current = setTimeout(() => {
-      handleError({ code: 3 }); // TIMEOUT error code
+      handleError({ code: 3 });
     }, 15000);
 
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(handleSuccess, handleError, {
+    // 📍 initial position
+    navigator.geolocation.getCurrentPosition(handleSuccess, handleError, {
+      enableHighAccuracy: true,
+      timeout: 10000,
+      maximumAge: 0,
+    });
+
+    // 👀 watch position
+    geolocationWatchId.current = navigator.geolocation.watchPosition(
+      handleSuccess,
+      handleError,
+      {
         enableHighAccuracy: true,
         timeout: 10000,
         maximumAge: 0,
-      });
-
-      // 🔁 2️⃣ THEN start watching
-      geolocationWatchId.current = navigator.geolocation.watchPosition(
-        handleSuccess,
-        handleError,
-        {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        },
-      );
-    } else {
-      setLocationError(
-        "Geolocation is not supported by your browser. Please use a modern browser.",
-      );
-    }
+      }
+    );
 
     return () => {
-      // console.log("🧹 useGeoWatcher CLEANUP");
       if (timeoutIdRef.current) clearTimeout(timeoutIdRef.current);
       if (geolocationWatchId.current !== null) {
         navigator.geolocation.clearWatch(geolocationWatchId.current);
       }
     };
-  }, [enabled, user, onPositionUpdate]);
+  }, [enabled, user]); // ❗ REMOVED onPositionUpdate from deps
 
   return { coords, locationError };
 };

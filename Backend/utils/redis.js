@@ -1,10 +1,11 @@
 import Redis from "ioredis";
 
 const redis = new Redis(process.env.REDIS_URL, {
-  maxRetriesPerRequest: 5,
-  enableReadyCheck: true,
+  maxRetriesPerRequest: null, // 🔥 VERY IMPORTANT
+  enableReadyCheck: false,    // Upstash recommendation
+  connectTimeout: 10000,
   retryStrategy(times) {
-    return Math.min(times * 100, 2000);
+    return Math.min(times * 200, 2000); // gentle backoff
   },
 });
 

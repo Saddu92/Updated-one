@@ -10,8 +10,7 @@ import haversine from "haversine-distance";
 import orsRoutes from "./routes/orsRoutes.js";
 import Room from "./models/Room.js";
 import redis from "./utils/redis.js";
-import crypto from "crypto"; // add at top if not present
-
+import crypto from "crypto";
 
 dotenv.config();
 connectDB();
@@ -28,7 +27,6 @@ const io = new Server(server, {
     credentials: true,
   },
 });
-
 
 app.use(
   cors({
@@ -47,62 +45,69 @@ app.use("/api/auth", authRoutes);
 app.use("/api/room", roomRoutes);
 app.use("/api/ors", orsRoutes);
 app.set("io", io);
+
 const PORT = process.env.PORT || 5000;
 const userSocketMap = new Map();
 const roomCreators = {};
 
-
-const ALERT_COOLDOWN = 30000;
-
 const GEOFENCE_KEY = (roomCode) => `room:${roomCode}:geofence`;
+const GEOFENCE_RADIUS = 300;
 const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   ? parseInt(process.env.STATIONARY_THRESHOLD_MS, 10)
   : 2 * 60 * 1000;
 const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
   : 30 * 1000;
+const HAZARD_TTL = 5 * 60 * 1000;
+const STATUS_TTL = 20;
+const TRANSIENT_KEY_TTL = 600;
+
 const pendingConfirmations = {};
 
 console.log(
   `⏱️ Stationary threshold set to ${Math.round(STATIONARY_THRESHOLD / 1000)}s`
 );
 
-
-// Periodic stationary check
+// Periodic stationary check using tracked set (no redis.keys())
 setInterval(async () => {
   const now = Date.now();
+  const users = await redis.smembers("active:lastMove:users");
 
-  // 🔹 Fetch all users' lastMove timestamps
-  const keys = await redis.keys("room:*:user:*:lastMove");
-  
+  for (const entry of users) {
+    const [roomCode, userId] = entry.split(":");
+    const key = `room:${roomCode}:user:${userId}:lastMove`;
 
+    const last = await redis.get(key);
+    if (!last) {
+      await redis.srem("active:lastMove:users", entry);
+      continue;
+    }
 
-  for (const key of keys) {
-    const last = parseInt(await redis.get(key), 10);
-    if (!last) continue;
-
-    if (now - last < STATIONARY_THRESHOLD) continue;
-
-    // key format: room:{roomCode}:user:{userId}:lastMove
-    const [, roomCode, , userId] = key.split(":");
+    const lastTime = parseInt(last, 10);
+    if (now - lastTime < STATIONARY_THRESHOLD) continue;
 
     const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
-
-    // 🔹 Already marked stationary? (same logic as before)
     const alreadyStationary = await redis.get(stationaryKey);
     if (alreadyStationary === "true") continue;
 
-    // 🔹 Mark stationary in Redis
-    await redis.set(stationaryKey, "true");
+    // ✅ Batch Redis writes with pipeline
+    const pipe = redis.pipeline();
+    pipe.set(stationaryKey, "true", "EX", TRANSIENT_KEY_TTL);
+    pipe.set(
+      `room:${roomCode}:user:${userId}:sos`,
+      "true",
+      "EX",
+      TRANSIENT_KEY_TTL
+    );
+    pipe.sadd(`room:${roomCode}:active:stationary`, userId);
+    await pipe.exec();
 
-    // 🔹 Find socket for this user
     const socketId = userSocketMap.get(userId);
     const sock = io.sockets.sockets.get(socketId);
     if (!sock) continue;
 
     const username = sock.data?.username || "Unknown";
 
-    // 🔹 Ask user for confirmation (UNCHANGED BEHAVIOR)
     try {
       sock.emit("stationary-confirm", {
         message: `We've noticed you haven't moved for ${Math.round(
@@ -111,11 +116,10 @@ setInterval(async () => {
         timeout: STATIONARY_CONFIRM_TIMEOUT,
       });
     } catch {
-      // Same fallback behavior as your code
       io.to(roomCode).emit("user-stationary", {
         userId,
         username,
-        since: last,
+        since: lastTime,
       });
 
       io.to(roomCode).emit("room-message", {
@@ -130,7 +134,6 @@ setInterval(async () => {
       continue;
     }
 
-    // 🔹 Confirmation timeout (UNCHANGED LOGIC)
     if (!pendingConfirmations[roomCode]) {
       pendingConfirmations[roomCode] = {};
     }
@@ -139,70 +142,53 @@ setInterval(async () => {
       clearTimeout(pendingConfirmations[roomCode][userId]);
     }
 
- pendingConfirmations[roomCode][userId] = setTimeout(async () => {
-  const stillStationary = await redis.get(stationaryKey);
-  // ✅ CHECK: If user already confirmed, don't escalate to SOS
-  if (stillStationary !== "true") {
-    delete pendingConfirmations[roomCode][userId];
-    return;
-  }
+    pendingConfirmations[roomCode][userId] = setTimeout(async () => {
+      const stillStationary = await redis.get(stationaryKey);
+      if (stillStationary !== "true") {
+        delete pendingConfirmations[roomCode][userId];
+        return;
+      }
 
-  // ✅ ALSO CHECK: If there's no pending confirmation anymore, user already responded
-  if (!pendingConfirmations[roomCode]?.[userId]) {
-    return;
-  }
-  await redis.set(
-  `room:${roomCode}:user:${userId}:sos`,
-  "true"
-);
+      if (!pendingConfirmations[roomCode]?.[userId]) {
+        return;
+      }
 
-  // 🔴 ESCALATE TO SOS
-  io.to(roomCode).emit("user-sos", {
-    socketId: socketId,
-    username,
-    userId,
-  });
+      // ✅ Pipeline SOS escalation writes
+      const pipe = redis.pipeline();
+      pipe.set(
+        `room:${roomCode}:user:${userId}:sos`,
+        "true",
+        "EX",
+        TRANSIENT_KEY_TTL
+      );
+      pipe.sadd(`room:${roomCode}:active:sos`, userId);
+      await pipe.exec();
 
-  // 🔴 SEND CHAT MESSAGE
-  io.to(roomCode).emit("room-message", {
-    from: "System",
-    type: "sos",
-    content: `🚨 ${username} is unresponsive and may need help!`,
-    timestamp: Date.now(),
-  });
+      io.to(roomCode).emit("user-sos", {
+        socketId,
+        username,
+        userId,
+      });
 
-  delete pendingConfirmations[roomCode][userId];
-}, STATIONARY_CONFIRM_TIMEOUT);
+      io.to(roomCode).emit("room-message", {
+        from: "System",
+        type: "sos",
+        content: `🚨 ${username} is unresponsive and may need help!`,
+        timestamp: Date.now(),
+      });
 
+      delete pendingConfirmations[roomCode][userId];
+    }, STATIONARY_CONFIRM_TIMEOUT);
   }
 }, 30 * 1000);
 
 // SOCKET HANDLERS
+// 🔒 Per-socket rate limiter (absolute safety net)
+const lastLocationUpdate = new Map();
 io.on("connection", (socket) => {
   console.log(`🔌 New client connected: ${socket.id}`);
 
-
   socket.on("join-room", async ({ roomCode, username, userId }) => {
-    await redis.sadd(`room:${roomCode}:chat:users`, userId);
-
-    const geofenceState = await redis.hgetall(GEOFENCE_KEY(roomCode));
-socket.emit("geofence-init", geofenceState);
-const sosKeys = await redis.keys(`room:${roomCode}:user:*:sos`);
-const sosState = {};
-
-for (const key of sosKeys) {
-  const [, , , userId] = key.split(":");
-  const val = await redis.get(key);
-
-  if (val === "true") {
-    const socketId = userSocketMap.get(userId);
-    if (socketId) sosState[socketId] = true;
-  }
-}
-
-socket.emit("sos-init", sosState);
-
-
     if (!roomCode || !username || !userId) {
       console.warn("⚠ join-room failed:", { roomCode, username, userId });
       return;
@@ -211,18 +197,37 @@ socket.emit("sos-init", sosState);
     socket.data.roomCode = roomCode;
     socket.data.userId = userId;
     socket.data.username = username;
-    await redis.set(
+
+    // ✅ Batch initial setup with pipeline
+    const pipe = redis.pipeline();
+    pipe.sadd(`room:${roomCode}:chat:users`, userId);
+    pipe.set(
       `room:${roomCode}:user:${userId}:status`,
       "online",
       "EX",
-      20
+      STATUS_TTL
     );
+    await pipe.exec();
+
+    // ✅ Emit geofence state
+    const geofenceState = await redis.hgetall(GEOFENCE_KEY(roomCode));
+    socket.emit("geofence-init", geofenceState);
+
+    // ✅ Emit SOS state using tracked set (no redis.keys())
+    const sosUserIds = await redis.smembers(`room:${roomCode}:active:sos`);
+    const sosState = {};
+    for (const uid of sosUserIds) {
+      const socketId = userSocketMap.get(uid);
+      if (socketId) sosState[socketId] = true;
+    }
+    socket.emit("sos-init", sosState);
 
     socket.to(roomCode).emit("user-status", {
       userId,
       status: "online",
     });
 
+    // ✅ Handle duplicate socket for same user
     if (userSocketMap.has(userId)) {
       const oldSocketId = userSocketMap.get(userId);
       const oldSocket = io.sockets.sockets.get(oldSocketId);
@@ -282,54 +287,57 @@ socket.emit("sos-init", sosState);
   });
 
   socket.on("get-chat-history", async ({ roomCode }) => {
-  const raw = await redis.lrange(
-    `room:${roomCode}:chat:messages`,
-    0,
-    -1
-  );
+    const raw = await redis.lrange(
+      `room:${roomCode}:chat:messages`,
+      0,
+      -1
+    );
 
-  const messages = raw.map(JSON.parse);
-  socket.emit("chat-history", messages);
-});
+    const messages = raw.map(JSON.parse);
+    socket.emit("chat-history", messages);
+  });
 
-socket.on("get-unread-count", async ({ roomCode, userId }) => {
-  const count =
-    (await redis.get(`room:${roomCode}:chat:unread:${userId}`)) || 0;
+  socket.on("get-unread-count", async ({ roomCode, userId }) => {
+    const count =
+      (await redis.get(`room:${roomCode}:chat:unread:${userId}`)) || 0;
+    socket.emit("unread-count", Number(count));
+  });
 
-  socket.emit("unread-count", Number(count));
-});
-socket.on("mark-chat-seen", async ({ roomCode, userId }) => {
-  await redis.del(`room:${roomCode}:chat:unread:${userId}`);
-  socket.emit("unread-count", 0);
-});
-
-
-
+  socket.on("mark-chat-seen", async ({ roomCode, userId }) => {
+    await redis.del(`room:${roomCode}:chat:unread:${userId}`);
+    socket.emit("unread-count", 0);
+  });
 
   socket.on("location-update", async ({ roomCode, coords }) => {
-    // if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
-    //   console.warn("⚠ location-update failed:", {
-    //     roomCode,
-    //     coords,
-    //     user: socket.data,
-    //   });
-    //   return;
-    // }
+     const now = Date.now();
+  const last = lastLocationUpdate.get(socket.id) || 0;
 
+  // ⛔ drop spam (max 1 update / 1.5s)
+  if (now - last < 1500) return;
+
+  lastLocationUpdate.set(socket.id, now);
+      console.log("📍 location-update received");
+    if (!roomCode || !coords || !socket.data.username || !socket.data.userId) {
+      return;
+    }
+    
 
     const isCreator = socket.data.isCreator || false;
-
     const redisKey = `room:${roomCode}:locations`;
     const currentKey = socket.id;
     const prevKey = `${socket.id}:prev`;
+    const userId = socket.data.userId;
 
+    // ✅ Fetch previous location
     const prevRaw = await redis.hget(redisKey, prevKey);
     const prevLoc = prevRaw ? JSON.parse(prevRaw) : null;
-// ✅ Update creator coords
-if (isCreator && roomCreators[roomCode]) {
-  roomCreators[roomCode].coords = coords;
-}
 
+    // ✅ Update creator coords in memory
+    if (isCreator && roomCreators[roomCode]) {
+      roomCreators[roomCode].coords = coords;
+    }
+
+    // ✅ Calculate movement distance efficiently
     let moved = true;
     if (prevLoc) {
       try {
@@ -339,54 +347,73 @@ if (isCreator && roomCreators[roomCode]) {
       }
     }
 
-    await redis.hset(redisKey, prevKey, JSON.stringify(coords));
-    await redis.hset(redisKey, currentKey, JSON.stringify(coords));
-
+    // ✅ Batch location update operations
+    const pipe = redis.pipeline();
+    pipe.hset(redisKey, prevKey, JSON.stringify(coords), currentKey, JSON.stringify(coords));
+pipe.expire(`room:${roomCode}:locations`, 120);
     if (moved) {
-      await redis.set(
-        `room:${roomCode}:user:${socket.data.userId}:lastMove`,
-        Date.now()
+      pipe.set(
+        `room:${roomCode}:user:${userId}:lastMove`,
+        Date.now(),
+        "EX",
+        TRANSIENT_KEY_TTL
       );
-
-      await redis.set(
-        `room:${roomCode}:user:${socket.data.userId}:status`,
+      pipe.set(
+        `room:${roomCode}:user:${userId}:status`,
         "online",
         "EX",
-        20
+        STATUS_TTL
       );
-
-      const stationaryKey = `room:${roomCode}:user:${socket.data.userId}:stationary`;
-      const wasStationary = await redis.get(stationaryKey);
-
-      if (wasStationary === "true") {
-        await redis.set(
-  `room:${roomCode}:user:${socket.data.userId}:sos`,
-  "false"
-);
-
-        await redis.set(stationaryKey, "false");
-
-        io.to(roomCode).emit("user-stationary-cleared", {
-          socketId: socket.id,
-          username: socket.data.username,
-          
-        });
- io.to(roomCode).emit("user-sos-cleared", {
-    socketId: socket.id,
-    username: socket.data.username,
-    userId: socket.data.userId,
-  });
-
-        io.to(roomCode).emit("room-message", {
-          from: "System",
-          type: "info",
-          content: `${socket.data.username} is moving again.`,
-          timestamp: Date.now(),
-        });
-      }
+      pipe.sadd("active:lastMove:users", `${roomCode}:${userId}`);
+    } else {
+      pipe.set(
+        `room:${roomCode}:user:${userId}:status`,
+        "online",
+        "EX",
+        STATUS_TTL
+      );
     }
 
-    // ✅ location-update emit MUST be OUTSIDE the moved block
+    await pipe.exec();
+
+    // ✅ Check stationary status
+    const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
+    const wasStationary = await redis.get(stationaryKey);
+
+    if (wasStationary === "true") {
+      // ✅ Clear stationary with pipeline
+      const clearPipe = redis.pipeline();
+      clearPipe.set(stationaryKey, "false", "EX", TRANSIENT_KEY_TTL);
+      clearPipe.set(
+        `room:${roomCode}:user:${userId}:sos`,
+        "false",
+        "EX",
+        TRANSIENT_KEY_TTL
+      );
+      clearPipe.srem(`room:${roomCode}:active:stationary`, userId);
+      clearPipe.srem(`room:${roomCode}:active:sos`, userId);
+      await clearPipe.exec();
+
+      io.to(roomCode).emit("user-stationary-cleared", {
+        socketId: socket.id,
+        username: socket.data.username,
+      });
+
+      io.to(roomCode).emit("user-sos-cleared", {
+        socketId: socket.id,
+        username: socket.data.username,
+        userId,
+      });
+
+      io.to(roomCode).emit("room-message", {
+        from: "System",
+        type: "info",
+        content: `${socket.data.username} is moving again.`,
+        timestamp: Date.now(),
+      });
+    }
+
+    // ✅ Always emit location update
     io.to(roomCode).emit("location-update", {
       socketId: socket.id,
       username: socket.data.username,
@@ -394,67 +421,70 @@ if (isCreator && roomCreators[roomCode]) {
       isCreator,
     });
 
-    // ✅ Update creator coords
-   if (!isCreator && roomCreators[roomCode]?.coords) {
-  const creatorCoords = roomCreators[roomCode].coords;
-  const GEOFENCE_RADIUS = 300;
+    // ✅ Geofence check for non-creator members
+    if (!isCreator && roomCreators[roomCode]?.coords) {
+      const creatorCoords = roomCreators[roomCode].coords;
 
-  try {
-    const distance = haversine(coords, creatorCoords);
-    const redisKey = GEOFENCE_KEY(roomCode);
-    const userId = socket.data.userId;
+      try {
+        const distance = haversine(coords, creatorCoords);
+        const geofenceRedisKey = GEOFENCE_KEY(roomCode);
 
-    const wasOutside = await redis.hget(redisKey, userId);
-    const isOutside = distance > GEOFENCE_RADIUS;
+        const wasOutside = await redis.hget(geofenceRedisKey, userId);
+        const isOutside = distance > GEOFENCE_RADIUS;
 
-    // 🔴 ENTERED geofence violation
-    if (isOutside && !wasOutside) {
-      await redis.hset(redisKey, userId, "1");
+        // ✅ User entered geofence violation
+        if (isOutside && !wasOutside) {
+          const pipe = redis.pipeline();
+          pipe.hset(geofenceRedisKey, userId, "1");
+          pipe.sadd(`room:${roomCode}:active:geofence`, userId);
+          await pipe.exec();
 
-      io.to(roomCode).emit("geofence-update", {
-        userId,
-        socketId: socket.id,
-        isOutside: true,
-        distance: Math.round(distance),
-      });
+          io.to(roomCode).emit("geofence-update", {
+            userId,
+            socketId: socket.id,
+            isOutside: true,
+            distance: Math.round(distance),
+          });
 
-      io.to(roomCode).emit("room-message", {
-        from: "System",
-        type: "warning",
-        content: `⚠️ ${socket.data.username} is ${Math.round(distance)}m away from the group leader!`,
-        timestamp: Date.now(),
-      });
+          io.to(roomCode).emit("room-message", {
+            from: "System",
+            type: "warning",
+            content: `⚠️ ${socket.data.username} is ${Math.round(distance)}m away from the group leader!`,
+            timestamp: Date.now(),
+          });
+        }
+
+        // ✅ User re-entered geofence (back in range)
+        if (!isOutside && wasOutside) {
+          const pipe = redis.pipeline();
+          pipe.hdel(geofenceRedisKey, userId);
+          pipe.srem(`room:${roomCode}:active:geofence`, userId);
+          await pipe.exec();
+
+          io.to(roomCode).emit("geofence-update", {
+            userId,
+            socketId: socket.id,
+            isOutside: false,
+          });
+
+          io.to(roomCode).emit("room-message", {
+            from: "System",
+            type: "info",
+            content: `✅ ${socket.data.username} is back inside the group range.`,
+            timestamp: Date.now(),
+          });
+        }
+      } catch (err) {
+        console.error("Geofence error:", err);
+      }
     }
-
-    // 🟢 RE-ENTERED geofence (THIS FIXES YOUR ISSUE)
-    if (!isOutside && wasOutside) {
-      await redis.hdel(redisKey, userId);
-
-      io.to(roomCode).emit("geofence-update", {
-        userId,
-        socketId: socket.id,
-        isOutside: false,
-      });
-
-      io.to(roomCode).emit("room-message", {
-        from: "System",
-        type: "info",
-        content: `✅ ${socket.data.username} is back inside the group range.`,
-        timestamp: Date.now(),
-      });
-    }
-  } catch (err) {
-    console.error("Geofence error:", err);
-  }
-}
-
   });
 
   socket.on("stationary-response", async ({ roomCode, response }) => {
     const { userId, username } = socket.data;
     if (!roomCode || !userId) return;
 
-    // clear timeout
+    // ✅ Clear timeout
     if (pendingConfirmations[roomCode]?.[userId]) {
       clearTimeout(pendingConfirmations[roomCode][userId]);
       delete pendingConfirmations[roomCode][userId];
@@ -463,23 +493,30 @@ if (isCreator && roomCreators[roomCode]) {
     const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
 
     if (response === "yes") {
-      await redis.set(
-  `room:${roomCode}:user:${userId}:sos`,
-  "false"
-);
-
-      // ✅ USER IS OK → CLEAR STATIONARY IN REDIS
-      await redis.set(stationaryKey, "false");
-
-      // refresh lastMove so timer resets
-      await redis.set(`room:${roomCode}:user:${userId}:lastMove`, Date.now());
+      // ✅ User is OK - clear stationary with pipeline
+      const pipe = redis.pipeline();
+      pipe.set(stationaryKey, "false", "EX", TRANSIENT_KEY_TTL);
+      pipe.set(
+        `room:${roomCode}:user:${userId}:sos`,
+        "false",
+        "EX",
+        TRANSIENT_KEY_TTL
+      );
+      pipe.set(
+        `room:${roomCode}:user:${userId}:lastMove`,
+        Date.now(),
+        "EX",
+        TRANSIENT_KEY_TTL
+      );
+      pipe.srem(`room:${roomCode}:active:stationary`, userId);
+      pipe.srem(`room:${roomCode}:active:sos`, userId);
+      await pipe.exec();
 
       io.to(roomCode).emit("user-stationary-cleared", {
         socketId: socket.id,
         username,
       });
 
-      // ✅ ALSO CLEAR SOS ALERT
       io.to(roomCode).emit("user-sos-cleared", {
         socketId: socket.id,
         username,
@@ -493,7 +530,7 @@ if (isCreator && roomCreators[roomCode]) {
         timestamp: Date.now(),
       });
     } else {
-      // ❗ USER NEEDS HELP
+      // ✅ User needs help
       io.to(roomCode).emit("user-stationary", {
         socketId: socket.id,
         username,
@@ -509,46 +546,39 @@ if (isCreator && roomCreators[roomCode]) {
     }
   });
 
+  socket.on("chat-message", async ({ roomCode, message }) => {
+    if (!roomCode || !message?.content) return;
 
+    const chatMessage = {
+      id: crypto.randomUUID(),
+      sender: socket.data.username,
+      senderId: socket.data.userId,
+      content: message.content,
+      type: message.type || "text",
+      timestamp: Date.now(),
+    };
 
-socket.on("chat-message", async ({ roomCode, message }) => {
-  if (!roomCode || !message?.content) return;
-
-  const chatMessage = {
-    id: crypto.randomUUID(),
-    sender: socket.data.username,
-    senderId: socket.data.userId,
-    content: message.content,
-    type: message.type || "text",
-    timestamp: Date.now(),
-  };
-
-  // 🔹 Store message in Redis
-  await redis.rpush(
-    `room:${roomCode}:chat:messages`,
-    JSON.stringify(chatMessage)
-  );
-
-  // 🔹 Increase unread count for others
-  const users = await redis.smembers(`room:${roomCode}:chat:users`);
-for (const uid of users) {
-  if (uid !== chatMessage.senderId) {
-    const newCount = await redis.incr(
-      `room:${roomCode}:chat:unread:${uid}`
+    // ✅ Batch chat message storage
+    const pipe = redis.pipeline();
+    pipe.rpush(
+      `room:${roomCode}:chat:messages`,
+      JSON.stringify(chatMessage)
     );
+    pipe.ltrim(`room:${roomCode}:chat:messages`, -100, -1);
 
-    const targetSocket = userSocketMap.get(uid);
-
-    if (targetSocket) {
-      io.to(targetSocket).emit("unread-count", newCount);
+    // ✅ Increment unread count for all users except sender
+    const users = await redis.smembers(`room:${roomCode}:chat:users`);
+    for (const uid of users) {
+      if (uid !== chatMessage.senderId) {
+        pipe.incr(`room:${roomCode}:chat:unread:${uid}`);
+      }
     }
-  }
-}
 
-  // 🔹 Emit clean chat event
-  io.to(roomCode).emit("chat-message", chatMessage);
-});
+    await pipe.exec();
 
+    // ✅ Emit clean chat event
+    io.to(roomCode).emit("chat-message", chatMessage);
+  });
 
   socket.on("clear-sos", ({ roomCode }) => {
     if (!roomCode || !socket.data.username) return;
@@ -564,7 +594,6 @@ for (const uid of users) {
     );
   });
 
-  const HAZARD_TTL = 5 * 60 * 1000; // 5 minutes
   socket.on("add-hazard", (data) => {
     console.log("[Server] Received hazard:", data);
     const roomId = data.roomId;
@@ -584,29 +613,43 @@ for (const uid of users) {
       },
     });
     console.log("[Server] Sent hazard room-message");
-    setTimeout(() => {
-  io.in(roomId).emit("hazard-cleared", {
-    hazardId: data.id,
-    userName: data.userName,
-  });
 
-  io.in(roomId).emit("room-message", {
-    from: "System",
-    type: "info",
-    content: `✅ Hazard reported by ${data.userName} is now cleared.`,
-    timestamp: Date.now(),
-  });
-}, HAZARD_TTL);
+    // ✅ Hazard auto-clear with timeout
+    setTimeout(() => {
+      io.in(roomId).emit("hazard-cleared", {
+        hazardId: data.id,
+        userName: data.userName,
+      });
+
+      io.in(roomId).emit("room-message", {
+        from: "System",
+        type: "info",
+        content: `✅ Hazard reported by ${data.userName} is now cleared.`,
+        timestamp: Date.now(),
+      });
+    }, HAZARD_TTL);
   });
 
   socket.on("disconnect", async () => {
     const { roomCode, username, userId } = socket.data || {};
     if (!roomCode || !userId) return;
 
-    // 🔹 Mark user offline in Redis
-    await redis.set(`room:${roomCode}:user:${userId}:status`, "offline");
+    // ✅ Batch disconnect cleanup operations
+    const pipe = redis.pipeline();
+    pipe.set(`room:${roomCode}:user:${userId}:status`, "offline");
+    pipe.srem(`room:${roomCode}:chat:users`, userId);
+    pipe.srem(`room:${roomCode}:active:stationary`, userId);
+    pipe.srem(`room:${roomCode}:active:sos`, userId);
+    pipe.srem(`room:${roomCode}:active:geofence`, userId);
+    pipe.srem("active:lastMove:users", `${roomCode}:${userId}`);
+    pipe.hdel(
+  `room:${roomCode}:locations`,
+  socket.id,
+  `${socket.id}:prev`
+);
+    await pipe.exec();
 
-    // 🔹 Notify others (for faded / disconnected icon)
+
     socket.to(roomCode).emit("user-status", {
       userId,
       status: "offline",
@@ -616,31 +659,28 @@ for (const uid of users) {
       `❌ ${username} (${userId}) disconnected from room ${roomCode}`
     );
 
-    // 🔹 Cleanup server state
+    // ✅ Cleanup server state
     userSocketMap.delete(userId);
-    await redis.srem(`room:${roomCode}:chat:users`, userId);
-
-    // 🔹 Clear pending stationary confirmation (IMPORTANT)
+lastLocationUpdate.delete(socket.id);
+    // ✅ Clear pending stationary confirmation
     if (pendingConfirmations[roomCode]?.[userId]) {
       clearTimeout(pendingConfirmations[roomCode][userId]);
       delete pendingConfirmations[roomCode][userId];
     }
-  
 
-
+    // ✅ Handle room creator disconnect
     if (roomCreators[roomCode]?.userId === userId) {
       delete roomCreators[roomCode];
       console.log(`👑 Room creator left room ${roomCode}`);
     }
-    await redis.set(`room:${roomCode}:user:${userId}:stationary`, "false");
 
-    // 🔹 Notify room user left
+    // ✅ Notify room user left
     io.to(roomCode).emit("user-left", {
       socketId: socket.id,
       username,
     });
 
-    // 🔹 Update room user list
+    // ✅ Update room user list
     const users = [...(io.sockets.adapter.rooms.get(roomCode) || [])].map(
       (socketId) => ({
         socketId,
