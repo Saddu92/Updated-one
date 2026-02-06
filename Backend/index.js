@@ -12,6 +12,7 @@ import Room from "./models/Room.js";
 import redis from "./utils/redis.js";
 import crypto from "crypto"; // add at top if not present
 
+
 dotenv.config();
 connectDB();
 
@@ -19,14 +20,25 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: "http://localhost:5173",
+    origin: [
+      "http://localhost:5173",
+      process.env.FRONTEND_URL,
+    ],
     methods: ["GET", "POST"],
     credentials: true,
   },
 });
 
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "http://localhost:5173",
+      process.env.FRONTEND_URL,
+    ],
+    credentials: true,
+  })
+);
 app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/room", roomRoutes);

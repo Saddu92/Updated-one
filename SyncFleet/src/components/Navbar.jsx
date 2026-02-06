@@ -2,6 +2,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useAuthStore } from "../store/auth";
 import { useState } from "react";
 import { HiMenu, HiX } from "react-icons/hi";
+import logo from "@/assets/car.png";
 
 const Navbar = () => {
   const { user, logout } = useAuthStore();
@@ -19,12 +20,23 @@ const Navbar = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-14 md:h-16 flex items-center justify-between">
 
         {/* Logo */}
-        <Link
-          to="/"
-          className="text-lg font-semibold tracking-wide text-[#2563EB]"
-        >
-          SyncFleet
-        </Link>
+     <Link
+  to="/"
+  className="flex items-center gap-3 font-semibold tracking-wide text-[#2563EB]"
+>
+  <img
+    src={logo}
+    alt="SyncFleet logo"
+    className="
+      h-11 w-auto
+      object-contain
+      rounded-md
+    "
+  />
+  <span className="text-xl leading-none">
+    SyncFleet
+  </span>
+</Link>
 
         {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium">
