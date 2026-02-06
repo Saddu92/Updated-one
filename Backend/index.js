@@ -637,16 +637,20 @@ if (isCreator && roomCreators[roomCode]) {
         timestamp: Date.now(),
       });
     } else {
-      // ❗ USER NEEDS HELP
-      io.to(roomCode).emit("user-stationary", {
+      // ❗ USER NEEDS HELP → trigger SOS
+      const sosPipe = redis.pipeline();
+      applySosState(sosPipe, roomCode, userId, true);
+      await sosPipe.exec();
+
+      io.to(roomCode).emit("user-sos", {
         socketId: socket.id,
         username,
-        since: Date.now(),
+        userId,
       });
 
       io.to(roomCode).emit("room-message", {
         from: "System",
-        type: "warning",
+        type: "sos",
         content: `🚨 ${username} indicated they need help!`,
         timestamp: Date.now(),
       });

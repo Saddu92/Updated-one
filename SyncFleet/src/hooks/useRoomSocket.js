@@ -43,6 +43,12 @@ export const useRoomSocket = ({
     const handleConnect = () => {
       setIsConnecting(false);
       setMySocketId(socket.id);
+      try {
+        window.__syncFleetSocket = socket;
+        window.__syncFleetRoomCode = roomCode;
+      } catch (e) {
+        // ignore
+      }
       socket.emit("join-room", {
         roomCode,
         username: user.name,
