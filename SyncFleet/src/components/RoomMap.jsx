@@ -375,6 +375,7 @@ useEffect(() => {
       timestamp: new Date().toISOString(),
     };
     socket.emit("chat-message", { roomCode, message });
+    socket.emit("manual-sos", { roomCode });
 
     // setUserLocations((prev) => ({
     //   ...prev,

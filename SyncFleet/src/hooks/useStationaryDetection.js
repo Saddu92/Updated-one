@@ -137,6 +137,7 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
     try {
       const socket = window.__syncFleetSocket; // global socket reference (set in app's socket init)
       socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'yes' });
+      socket?.emit?.('clear-sos', { roomCode: window.__syncFleetRoomCode });
     } catch (e) {
       // ignore
     }

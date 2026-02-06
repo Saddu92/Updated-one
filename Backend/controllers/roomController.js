@@ -185,9 +185,20 @@ export const deleteRoom = async (req, res) => {
       roomCode,
     });
 
-    // 🔴 2. Clean Redis
-    const keys = await redis.keys(`room:${roomCode}:*`);
-    if (keys.length) await redis.del(keys);
+    // 🔴 2. Clean Redis (SCAN to avoid blocking)
+    const pattern = `room:${roomCode}:*`;
+    let cursor = "0";
+    do {
+      const [nextCursor, keys] = await redis.scan(
+        cursor,
+        "MATCH",
+        pattern,
+        "COUNT",
+        500
+      );
+      cursor = nextCursor;
+      if (keys.length) await redis.del(keys);
+    } while (cursor !== "0");
 
     // 🔴 3. Remove room from users
     await User.updateMany(

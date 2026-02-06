@@ -1,12 +1,16 @@
 // hooks/useGeoWatcher.js
 import { useEffect, useRef, useState } from "react";
-import { GEOLOCATION_TIMEOUT } from "../utils/helper.js";
+import haversine from "haversine-distance";
+import { GEOLOCATION_TIMEOUT, MOVEMENT_THRESHOLD } from "../utils/helper.js";
 
 export const useGeoWatcher = ({ enabled = true, user, onPositionUpdate }) => {
   const [coords, setCoords] = useState(null);
   const [locationError, setLocationError] = useState(null);
   const geolocationWatchId = useRef(null);
   const timeoutIdRef = useRef(null);
+  const lastSentRef = useRef({ coords: null, ts: 0 });
+  const MIN_EMIT_MS =
+    Number(import.meta.env.VITE_LOCATION_EMIT_MS) || 5000;
 
   useEffect(() => {
   // console.log("🧭 useGeoWatcher EFFECT STARTED");
@@ -24,7 +28,24 @@ export const useGeoWatcher = ({ enabled = true, user, onPositionUpdate }) => {
       setCoords(coords);
       setLocationError(null); // ✅ Clear any previous errors
       if (user && onPositionUpdate) {
-        onPositionUpdate(coords);
+        const now = Date.now();
+        const prev = lastSentRef.current;
+        let shouldEmit = false;
+        if (!prev.coords) {
+          shouldEmit = true;
+        } else {
+          const distance = haversine(prev.coords, coords);
+          if (distance >= MOVEMENT_THRESHOLD) {
+            shouldEmit = true;
+          } else if (now - prev.ts >= MIN_EMIT_MS) {
+            shouldEmit = true;
+          }
+        }
+
+        if (shouldEmit) {
+          lastSentRef.current = { coords, ts: now };
+          onPositionUpdate(coords);
+        }
       }
     };
 

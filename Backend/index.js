@@ -12,6 +12,48 @@ import Room from "./models/Room.js";
 import redis from "./utils/redis.js";
 import crypto from "crypto"; // add at top if not present
 
+// Redis Lua helpers to reduce command count (Upstash-friendly)
+redis.defineCommand("setSosState", {
+  numberOfKeys: 2,
+  lua: `
+    redis.call("SET", KEYS[1], ARGV[1])
+    if tonumber(ARGV[3]) and tonumber(ARGV[3]) > 0 then
+      redis.call("EXPIRE", KEYS[1], tonumber(ARGV[3]))
+    end
+    if ARGV[1] == "true" then
+      redis.call("SADD", KEYS[2], ARGV[2])
+    else
+      redis.call("SREM", KEYS[2], ARGV[2])
+    end
+    if tonumber(ARGV[3]) and tonumber(ARGV[3]) > 0 then
+      redis.call("EXPIRE", KEYS[2], tonumber(ARGV[3]))
+    end
+    return 1
+  `,
+});
+
+redis.defineCommand("incrUnread", {
+  numberOfKeys: 1,
+  lua: `
+    local users = redis.call("SMEMBERS", KEYS[1])
+    local res = {}
+    local ttl = tonumber(ARGV[3])
+    for i = 1, #users do
+      local u = users[i]
+      if u ~= ARGV[1] then
+        local key = ARGV[2] .. u
+        local c = redis.call("INCR", key)
+        if ttl and ttl > 0 then
+          redis.call("EXPIRE", key, ttl)
+        end
+        res[#res + 1] = u
+        res[#res + 1] = c
+      end
+    end
+    return res
+  `,
+});
+
 
 dotenv.config();
 connectDB();
@@ -55,12 +97,46 @@ const roomCreators = {};
 const ALERT_COOLDOWN = 30000;
 
 const GEOFENCE_KEY = (roomCode) => `room:${roomCode}:geofence`;
+const SOS_SET_KEY = (roomCode) => `room:${roomCode}:sos:users`;
+const SOS_INIT_KEY = (roomCode) => `room:${roomCode}:sos:init`;
+const SOS_KEY = (roomCode, userId) => `room:${roomCode}:user:${userId}:sos`;
+const applySosState = (pipe, roomCode, userId, isSos) => {
+  pipe.setSosState(
+    SOS_KEY(roomCode, userId),
+    SOS_SET_KEY(roomCode),
+    isSos ? "true" : "false",
+    userId,
+    SOS_TTL_SEC
+  );
+};
 const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   ? parseInt(process.env.STATIONARY_THRESHOLD_MS, 10)
   : 2 * 60 * 1000;
 const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
   : 30 * 1000;
+const LOCATION_EMIT_MS = process.env.LOCATION_EMIT_MS
+  ? parseInt(process.env.LOCATION_EMIT_MS, 10)
+  : 5000;
+const LOCATION_MIN_MOVE_M = process.env.LOCATION_MIN_MOVE_M
+  ? parseInt(process.env.LOCATION_MIN_MOVE_M, 10)
+  : 5;
+const CHAT_TTL_SEC = process.env.CHAT_TTL_SEC
+  ? parseInt(process.env.CHAT_TTL_SEC, 10)
+  : 120;
+const CHAT_HISTORY_LIMIT = process.env.CHAT_HISTORY_LIMIT
+  ? parseInt(process.env.CHAT_HISTORY_LIMIT, 10)
+  : 50;
+const LOCATIONS_TTL_SEC = process.env.LOCATIONS_TTL_SEC
+  ? parseInt(process.env.LOCATIONS_TTL_SEC, 10)
+  : 120;
+const SOS_TTL_SEC = process.env.SOS_TTL_SEC
+  ? parseInt(process.env.SOS_TTL_SEC, 10)
+  : 180;
+const UNREAD_TTL_SEC = process.env.UNREAD_TTL_SEC
+  ? parseInt(process.env.UNREAD_TTL_SEC, 10)
+  : 180;
+const lastLocationUpdate = new Map();
 const pendingConfirmations = {};
 
 console.log(
@@ -68,112 +144,132 @@ console.log(
 );
 
 
-// Periodic stationary check
+// Periodic stationary check - OPTIMIZED with local cache
+const stationaryCache = {}; // Local cache to avoid repeated Redis reads
 setInterval(async () => {
   const now = Date.now();
 
-  // 🔹 Fetch all users' lastMove timestamps
-  const keys = await redis.keys("room:*:user:*:lastMove");
-  
-
-
-  for (const key of keys) {
-    const last = parseInt(await redis.get(key), 10);
-    if (!last) continue;
-
-    if (now - last < STATIONARY_THRESHOLD) continue;
-
-    // key format: room:{roomCode}:user:{userId}:lastMove
-    const [, roomCode, , userId] = key.split(":");
-
-    const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
-
-    // 🔹 Already marked stationary? (same logic as before)
-    const alreadyStationary = await redis.get(stationaryKey);
-    if (alreadyStationary === "true") continue;
-
-    // 🔹 Mark stationary in Redis
-    await redis.set(stationaryKey, "true");
-
-    // 🔹 Find socket for this user
-    const socketId = userSocketMap.get(userId);
+  // 🔹 Get all rooms from active connections (instead of KEYS scan)
+  const rooms = new Set();
+  for (const [userId, socketId] of userSocketMap.entries()) {
     const sock = io.sockets.sockets.get(socketId);
-    if (!sock) continue;
-
-    const username = sock.data?.username || "Unknown";
-
-    // 🔹 Ask user for confirmation (UNCHANGED BEHAVIOR)
-    try {
-      sock.emit("stationary-confirm", {
-        message: `We've noticed you haven't moved for ${Math.round(
-          STATIONARY_THRESHOLD / 60000
-        )} minutes. Are you alright?`,
-        timeout: STATIONARY_CONFIRM_TIMEOUT,
-      });
-    } catch {
-      // Same fallback behavior as your code
-      io.to(roomCode).emit("user-stationary", {
-        userId,
-        username,
-        since: last,
-      });
-
-      io.to(roomCode).emit("room-message", {
-        from: "System",
-        type: "warning",
-        content: `⚠️ ${username} has been stationary for more than ${Math.round(
-          STATIONARY_THRESHOLD / 60000
-        )} minutes.`,
-        timestamp: Date.now(),
-      });
-
-      continue;
-    }
-
-    // 🔹 Confirmation timeout (UNCHANGED LOGIC)
-    if (!pendingConfirmations[roomCode]) {
-      pendingConfirmations[roomCode] = {};
-    }
-
-    if (pendingConfirmations[roomCode][userId]) {
-      clearTimeout(pendingConfirmations[roomCode][userId]);
-    }
-
- pendingConfirmations[roomCode][userId] = setTimeout(async () => {
-  const stillStationary = await redis.get(stationaryKey);
-  // ✅ CHECK: If user already confirmed, don't escalate to SOS
-  if (stillStationary !== "true") {
-    delete pendingConfirmations[roomCode][userId];
-    return;
+    if (sock?.data.roomCode) rooms.add(sock.data.roomCode);
   }
 
-  // ✅ ALSO CHECK: If there's no pending confirmation anymore, user already responded
-  if (!pendingConfirmations[roomCode]?.[userId]) {
-    return;
-  }
-  await redis.set(
-  `room:${roomCode}:user:${userId}:sos`,
-  "true"
-);
+  // 🔹 Check each active room in one batch
+  for (const roomCode of rooms) {
+    const pipe = redis.pipeline();
+    const playerKeys = [];
+    const toStationary = [];
+    
+    // Get all sockets in this room
+    const roomSockets = io.sockets.adapter.rooms.get(roomCode) || [];
+    
+    for (const socketId of roomSockets) {
+      const sock = io.sockets.sockets.get(socketId);
+      if (sock?.data.userId) {
+        const userKey = `room:${roomCode}:user:${sock.data.userId}:lastMove`;
+        const stationaryKey = `room:${roomCode}:user:${sock.data.userId}:stationary`;
+        playerKeys.push({ socketId: socketId, userId: sock.data.userId, userKey, stationaryKey });
+        pipe.get(userKey);
+        pipe.get(stationaryKey);
+      }
+    }
 
-  // 🔴 ESCALATE TO SOS
-  io.to(roomCode).emit("user-sos", {
-    socketId: socketId,
-    username,
-    userId,
-  });
+    if (playerKeys.length === 0) continue;
 
-  // 🔴 SEND CHAT MESSAGE
-  io.to(roomCode).emit("room-message", {
-    from: "System",
-    type: "sos",
-    content: `🚨 ${username} is unresponsive and may need help!`,
-    timestamp: Date.now(),
-  });
+    // Execute batch
+    const results = await pipe.exec();
+    
+    // Process results
+    for (let i = 0; i < playerKeys.length; i++) {
+      const { socketId, userId, userKey, stationaryKey } = playerKeys[i];
+      const last = parseInt(results[i * 2], 10);
+      const alreadyStationary = results[i * 2 + 1];
 
-  delete pendingConfirmations[roomCode][userId];
-}, STATIONARY_CONFIRM_TIMEOUT);
+      if (!last || now - last < STATIONARY_THRESHOLD) continue;
+      if (alreadyStationary === "true") continue;
 
+      // Mark for batch Redis update
+      toStationary.push(stationaryKey);
+
+      const sock = io.sockets.sockets.get(socketId);
+      if (!sock) continue;
+
+      const username = sock.data?.username || "Unknown";
+
+      try {
+        sock.emit("stationary-confirm", {
+          message: `We've noticed you haven't moved for ${Math.round(
+            STATIONARY_THRESHOLD / 60000
+          )} minutes. Are you alright?`,
+          timeout: STATIONARY_CONFIRM_TIMEOUT,
+        });
+      } catch {
+        io.to(roomCode).emit("user-stationary", {
+          userId,
+          username,
+          since: last,
+        });
+
+        io.to(roomCode).emit("room-message", {
+          from: "System",
+          type: "warning",
+          content: `⚠️ ${username} has been stationary for more than ${Math.round(
+            STATIONARY_THRESHOLD / 60000
+          )} minutes.`,
+          timestamp: Date.now(),
+        });
+        continue;
+      }
+
+      if (!pendingConfirmations[roomCode]) {
+        pendingConfirmations[roomCode] = {};
+      }
+
+      if (pendingConfirmations[roomCode][userId]) {
+        clearTimeout(pendingConfirmations[roomCode][userId]);
+      }
+
+      pendingConfirmations[roomCode][userId] = setTimeout(async () => {
+        const stillStationary = await redis.get(stationaryKey);
+        if (stillStationary !== "true") {
+          delete pendingConfirmations[roomCode][userId];
+          return;
+        }
+
+        if (!pendingConfirmations[roomCode]?.[userId]) {
+          return;
+        }
+        
+        const sosPipe = redis.pipeline();
+        applySosState(sosPipe, roomCode, userId, true);
+        await sosPipe.exec();
+
+        io.to(roomCode).emit("user-sos", {
+          socketId: socketId,
+          username,
+          userId,
+        });
+
+        io.to(roomCode).emit("room-message", {
+          from: "System",
+          type: "sos",
+          content: `🚨 ${username} is unresponsive and may need help!`,
+          timestamp: Date.now(),
+        });
+
+        delete pendingConfirmations[roomCode][userId];
+      }, STATIONARY_CONFIRM_TIMEOUT);
+    }
+
+    if (toStationary.length) {
+      const setPipe = redis.pipeline();
+      for (const key of toStationary) {
+        setPipe.set(key, "true");
+      }
+      await setPipe.exec();
+    }
   }
 }, 30 * 1000);
 
@@ -183,24 +279,51 @@ io.on("connection", (socket) => {
 
 
   socket.on("join-room", async ({ roomCode, username, userId }) => {
-    await redis.sadd(`room:${roomCode}:chat:users`, userId);
+    const joinPipe = redis.pipeline();
+    joinPipe.sadd(`room:${roomCode}:chat:users`, userId);
+    joinPipe.hgetall(GEOFENCE_KEY(roomCode));
+    joinPipe.smembers(SOS_SET_KEY(roomCode));
+    joinPipe.get(SOS_INIT_KEY(roomCode));
+    const joinResults = await joinPipe.exec();
 
-    const geofenceState = await redis.hgetall(GEOFENCE_KEY(roomCode));
-socket.emit("geofence-init", geofenceState);
-const sosKeys = await redis.keys(`room:${roomCode}:user:*:sos`);
-const sosState = {};
+    const geofenceState = joinResults[1]?.[1] || {};
+    socket.emit("geofence-init", geofenceState);
+    let sosUserIds = joinResults[2]?.[1] || [];
+    const sosState = {};
 
-for (const key of sosKeys) {
-  const [, , , userId] = key.split(":");
-  const val = await redis.get(key);
+    // One-time fallback for legacy keys; populate set to avoid future KEYS
+    if (!sosUserIds.length) {
+      const init = joinResults[3]?.[1];
+      if (!init) {
+        const sosKeys = await redis.keys(`room:${roomCode}:user:*:sos`);
+        if (sosKeys.length) {
+          const pipe = redis.pipeline();
+          for (const key of sosKeys) pipe.get(key);
+          const results = await pipe.exec();
 
-  if (val === "true") {
-    const socketId = userSocketMap.get(userId);
-    if (socketId) sosState[socketId] = true;
-  }
-}
+          const migratePipe = redis.pipeline();
+          for (let i = 0; i < sosKeys.length; i++) {
+            const val = results[i]?.[1];
+            if (val === "true") {
+              const [, , , userId] = sosKeys[i].split(":");
+              sosUserIds.push(userId);
+              migratePipe.sadd(SOS_SET_KEY(roomCode), userId);
+            }
+          }
+          migratePipe.set(SOS_INIT_KEY(roomCode), "1");
+          await migratePipe.exec();
+        } else {
+          await redis.set(SOS_INIT_KEY(roomCode), "1");
+        }
+      }
+    }
 
-socket.emit("sos-init", sosState);
+    for (const userId of sosUserIds) {
+      const socketId = userSocketMap.get(userId);
+      if (socketId) sosState[socketId] = true;
+    }
+
+    socket.emit("sos-init", sosState);
 
 
     if (!roomCode || !username || !userId) {
@@ -281,10 +404,10 @@ socket.emit("sos-init", sosState);
       });
   });
 
-  socket.on("get-chat-history", async ({ roomCode }) => {
+socket.on("get-chat-history", async ({ roomCode }) => {
   const raw = await redis.lrange(
     `room:${roomCode}:chat:messages`,
-    0,
+    -CHAT_HISTORY_LIMIT,
     -1
   );
 
@@ -319,6 +442,21 @@ socket.on("mark-chat-seen", async ({ roomCode, userId }) => {
 
     const isCreator = socket.data.isCreator || false;
 
+    // Server-side rate limit to reduce Redis load
+    const now = Date.now();
+    const last = lastLocationUpdate.get(socket.id);
+    if (last) {
+      try {
+        const dist = haversine(last.coords, coords);
+        if (dist < LOCATION_MIN_MOVE_M && now - last.ts < LOCATION_EMIT_MS) {
+          return;
+        }
+      } catch {
+        // ignore distance errors and continue
+      }
+    }
+    lastLocationUpdate.set(socket.id, { coords, ts: now });
+
     const redisKey = `room:${roomCode}:locations`;
     const currentKey = socket.id;
     const prevKey = `${socket.id}:prev`;
@@ -339,16 +477,23 @@ if (isCreator && roomCreators[roomCode]) {
       }
     }
 
-    await redis.hset(redisKey, prevKey, JSON.stringify(coords));
-    await redis.hset(redisKey, currentKey, JSON.stringify(coords));
+    const locPipe = redis.pipeline();
+    locPipe.hset(redisKey, {
+      [prevKey]: JSON.stringify(coords),
+      [currentKey]: JSON.stringify(coords),
+    });
+    if (LOCATIONS_TTL_SEC > 0) {
+      locPipe.expire(redisKey, LOCATIONS_TTL_SEC);
+    }
+    await locPipe.exec();
 
     if (moved) {
-      await redis.set(
+      const movePipe = redis.pipeline();
+      movePipe.set(
         `room:${roomCode}:user:${socket.data.userId}:lastMove`,
         Date.now()
       );
-
-      await redis.set(
+      movePipe.set(
         `room:${roomCode}:user:${socket.data.userId}:status`,
         "online",
         "EX",
@@ -356,15 +501,15 @@ if (isCreator && roomCreators[roomCode]) {
       );
 
       const stationaryKey = `room:${roomCode}:user:${socket.data.userId}:stationary`;
-      const wasStationary = await redis.get(stationaryKey);
+      movePipe.get(stationaryKey);
+      const moveResults = await movePipe.exec();
+      const wasStationary = moveResults[2]?.[1];
 
       if (wasStationary === "true") {
-        await redis.set(
-  `room:${roomCode}:user:${socket.data.userId}:sos`,
-  "false"
-);
-
-        await redis.set(stationaryKey, "false");
+        const clearPipe = redis.pipeline();
+        applySosState(clearPipe, roomCode, socket.data.userId, false);
+        clearPipe.set(stationaryKey, "false");
+        await clearPipe.exec();
 
         io.to(roomCode).emit("user-stationary-cleared", {
           socketId: socket.id,
@@ -463,16 +608,15 @@ if (isCreator && roomCreators[roomCode]) {
     const stationaryKey = `room:${roomCode}:user:${userId}:stationary`;
 
     if (response === "yes") {
-      await redis.set(
-  `room:${roomCode}:user:${userId}:sos`,
-  "false"
-);
+      const okPipe = redis.pipeline();
+      applySosState(okPipe, roomCode, userId, false);
 
       // ✅ USER IS OK → CLEAR STATIONARY IN REDIS
-      await redis.set(stationaryKey, "false");
+      okPipe.set(stationaryKey, "false");
 
       // refresh lastMove so timer resets
-      await redis.set(`room:${roomCode}:user:${userId}:lastMove`, Date.now());
+      okPipe.set(`room:${roomCode}:user:${userId}:lastMove`, Date.now());
+      await okPipe.exec();
 
       io.to(roomCode).emit("user-stationary-cleared", {
         socketId: socket.id,
@@ -509,6 +653,28 @@ if (isCreator && roomCreators[roomCode]) {
     }
   });
 
+  socket.on("manual-sos", async ({ roomCode }) => {
+    const { userId, username } = socket.data;
+    if (!roomCode || !userId) return;
+
+    const sosPipe = redis.pipeline();
+    applySosState(sosPipe, roomCode, userId, true);
+    await sosPipe.exec();
+
+    io.to(roomCode).emit("user-sos", {
+      socketId: socket.id,
+      username,
+      userId,
+    });
+
+    io.to(roomCode).emit("room-message", {
+      from: "System",
+      type: "sos",
+      content: `🚨 ${username} is requesting help!`,
+      timestamp: Date.now(),
+    });
+  });
+
 
 
 socket.on("chat-message", async ({ roomCode, message }) => {
@@ -524,26 +690,32 @@ socket.on("chat-message", async ({ roomCode, message }) => {
   };
 
   // 🔹 Store message in Redis
-  await redis.rpush(
-    `room:${roomCode}:chat:messages`,
-    JSON.stringify(chatMessage)
+  const chatKey = `room:${roomCode}:chat:messages`;
+  const chatPipe = redis.pipeline();
+  chatPipe.rpush(chatKey, JSON.stringify(chatMessage));
+  if (CHAT_HISTORY_LIMIT > 0) {
+    chatPipe.ltrim(chatKey, -CHAT_HISTORY_LIMIT, -1);
+  }
+  if (CHAT_TTL_SEC > 0) {
+    chatPipe.expire(chatKey, CHAT_TTL_SEC);
+  }
+  await chatPipe.exec();
+
+  // 🔹 Increase unread count for others (single Redis command)
+  const unreadPairs = await redis.incrUnread(
+    `room:${roomCode}:chat:users`,
+    chatMessage.senderId,
+    `room:${roomCode}:chat:unread:`,
+    UNREAD_TTL_SEC
   );
-
-  // 🔹 Increase unread count for others
-  const users = await redis.smembers(`room:${roomCode}:chat:users`);
-for (const uid of users) {
-  if (uid !== chatMessage.senderId) {
-    const newCount = await redis.incr(
-      `room:${roomCode}:chat:unread:${uid}`
-    );
-
+  for (let i = 0; i < unreadPairs.length; i += 2) {
+    const uid = unreadPairs[i];
+    const newCount = Number(unreadPairs[i + 1]);
     const targetSocket = userSocketMap.get(uid);
-
     if (targetSocket) {
       io.to(targetSocket).emit("unread-count", newCount);
     }
   }
-}
 
   // 🔹 Emit clean chat event
   io.to(roomCode).emit("chat-message", chatMessage);
@@ -552,6 +724,13 @@ for (const uid of users) {
 
   socket.on("clear-sos", ({ roomCode }) => {
     if (!roomCode || !socket.data.username) return;
+
+    const { userId, username } = socket.data;
+    if (userId) {
+      const clearPipe = redis.pipeline();
+      applySosState(clearPipe, roomCode, userId, false);
+      clearPipe.exec().catch(() => {});
+    }
 
     io.to(roomCode).emit("user-sos-cleared", {
       socketId: socket.id,
@@ -603,8 +782,9 @@ for (const uid of users) {
     const { roomCode, username, userId } = socket.data || {};
     if (!roomCode || !userId) return;
 
-    // 🔹 Mark user offline in Redis
-    await redis.set(`room:${roomCode}:user:${userId}:status`, "offline");
+    // 🔹 Mark user offline in Redis (batched)
+    const disconnectPipe = redis.pipeline();
+    disconnectPipe.set(`room:${roomCode}:user:${userId}:status`, "offline");
 
     // 🔹 Notify others (for faded / disconnected icon)
     socket.to(roomCode).emit("user-status", {
@@ -618,7 +798,7 @@ for (const uid of users) {
 
     // 🔹 Cleanup server state
     userSocketMap.delete(userId);
-    await redis.srem(`room:${roomCode}:chat:users`, userId);
+    disconnectPipe.srem(`room:${roomCode}:chat:users`, userId);
 
     // 🔹 Clear pending stationary confirmation (IMPORTANT)
     if (pendingConfirmations[roomCode]?.[userId]) {
@@ -632,7 +812,7 @@ for (const uid of users) {
       delete roomCreators[roomCode];
       console.log(`👑 Room creator left room ${roomCode}`);
     }
-    await redis.set(`room:${roomCode}:user:${userId}:stationary`, "false");
+    disconnectPipe.set(`room:${roomCode}:user:${userId}:stationary`, "false");
 
     // 🔹 Notify room user left
     io.to(roomCode).emit("user-left", {
@@ -649,6 +829,7 @@ for (const uid of users) {
     );
 
     io.to(roomCode).emit("room-users", users);
+    await disconnectPipe.exec();
   });
 });
 
