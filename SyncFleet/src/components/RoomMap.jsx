@@ -7,7 +7,7 @@ import React, {
   useEffect,
 } from "react";
 import { useParams } from "react-router-dom";
-import { getSocket, disconnectSocket } from "../utils/socket.js";
+
 import { useAuthStore } from "../store/auth";
 import haversine from "haversine-distance";
 import {
@@ -38,6 +38,12 @@ import UsersPanel from "./UsersPanel.jsx";
 import StationaryModal from "./StationaryModal.jsx";
 import LeaveRoomModal from "./LeaveRoomModal.jsx";
 import Toast from "./Toast.jsx";
+import {
+  getSocket,
+  connectSocket,
+  disconnectSocket,
+  isSocketReady,
+} from "../utils/socket.js";
 
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
@@ -148,10 +154,12 @@ const RoomMap = ({ room }) => {
   const [roomCreatorId, setRoomCreatorId] = useState(null);
   const [creatorSocketId, setCreatorSocketId] = useState(null); // ✅ NEW
   const [creatorCoords, setCreatorCoords] = useState(null); // ✅ NEW
+  const [isSocketReadyState, setIsSocketReadyState] = useState(false);
 
   // Refs
   const mapRef = useRef();
   const toastTimeoutRef = useRef(null);
+  const socketReadyRef = useRef(false);
 
   const trailExpiryMs = useMemo(
     () => trailDuration * 60 * 1000,
@@ -164,13 +172,37 @@ const RoomMap = ({ room }) => {
     setToast({ message, type });
     toastTimeoutRef.current = setTimeout(() => setToast(null), 5000);
   }, []);
+useEffect(() => {
+  connectSocket();
+}, []);
+
+ useEffect(() => {
+  const onConnect = () => {
+    socketReadyRef.current = true;
+    setIsSocketReadyState(true);
+  };
+
+  const onDisconnect = () => {
+    socketReadyRef.current = false;
+    setIsSocketReadyState(false);
+  };
+
+  socket.on("connect", onConnect);
+  socket.on("disconnect", onDisconnect);
+
+  return () => {
+    socket.off("connect", onConnect);
+    socket.off("disconnect", onDisconnect);
+  };
+}, [socket]);
+
 
   // Custom hooks
   const { coords, locationError } = useGeoWatcher({
-    enabled:true,
+   enabled: Boolean(user)  && isSocketReadyState,
     user,
     onPositionUpdate: (newCoords) => {
-      if (!user?.id || !user?.name || !socket.connected) return;
+     if (!user?.id || !user?.name || !isSocketReady()) return;
       socket.emit(
         "location-update",
         {
@@ -229,6 +261,25 @@ const RoomMap = ({ room }) => {
     },
   });
 
+  useEffect(() => {
+  function handleUserBatteryUpdate({ userId, level, charging }) {
+    setUserLocations((prev) => ({
+      ...prev,
+      [userId]: {
+        ...(prev[userId] || {}),
+        battery: { level, charging },
+      },
+    }));
+  }
+
+  socket.on("user-battery-update", handleUserBatteryUpdate);
+  return () => {
+    socket.off("user-battery-update", handleUserBatteryUpdate);
+  };
+}, [socket, setUserLocations]);
+
+
+
   // for deleting the people from the room
   useEffect(() => {
   socket.on("room-deleted", ({ roomCode }) => {
@@ -268,7 +319,7 @@ socket.on("chat-message", (msg) => {
 }, [socket, roomCode]);
 
 useEffect(() => {
-  if (!user?.id || !socket.connected) return;
+  if (!user?.id || !isSocketReadyState) return;
 
   const handleUnread = (count) => {
     setUnreadCount(count);
@@ -288,7 +339,7 @@ useEffect(() => {
     clearTimeout(timeout);
     socket.off("unread-count", handleUnread);
   };
-}, [socket.connected, roomCode, user?.id]);
+}, [!isSocketReadyState, roomCode, user?.id]);
 
 useEffect(() => {
   if (chatOpen && user?.id) {
@@ -310,7 +361,7 @@ useEffect(() => {
 
   // SOS emitter
   const emitSOS = useCallback(() => {
-    if (!socket.connected) {
+    if (!isSocketReady()) {
       showToast("Cannot send SOS - disconnected from server", "danger");
       return;
     }
@@ -325,24 +376,24 @@ useEffect(() => {
     };
     socket.emit("chat-message", { roomCode, message });
 
-    setUserLocations((prev) => ({
-      ...prev,
-      [mySocketId]: {
-        ...prev[mySocketId],
-        isSOS: true,
-        sosStartTime: Date.now()
-      },
-    }));
+    // setUserLocations((prev) => ({
+    //   ...prev,
+    //   [mySocketId]: {
+    //     ...prev[mySocketId],
+    //     isSOS: true,
+    //     sosStartTime: Date.now()
+    //   },
+    // }));
 
-    setTimeout(() => {
-      setUserLocations((prev) => ({
-        ...prev,
-        [mySocketId]: {
-          ...prev[mySocketId],
-          isSOS: false
-        },
-      }));
-    }, SOS_DURATION);
+    // setTimeout(() => {
+    //   setUserLocations((prev) => ({
+    //     ...prev,
+    //     [mySocketId]: {
+    //       ...prev[mySocketId],
+    //       isSOS: false
+    //     },
+    //   }));
+    // }, SOS_DURATION);
   }, [socket, roomCode, user, showToast, mySocketId, playAlertSound, setUserLocations]);
 
   const {
@@ -453,7 +504,7 @@ useEffect(() => {
     let lastSentLevel = null;
 
     const sendBatteryStatus = () => {
-      if (!batteryRef || !user?.id || !socket) return;
+    if (!batteryRef || !user?.id || !isSocketReady()) return;
       const data = {
         level: batteryRef.level,
         charging: batteryRef.charging,
@@ -487,22 +538,7 @@ useEffect(() => {
     };
   }, [socket, user, roomCode]);
 
-  useEffect(() => {
-    const socket = getSocket();
-    function handleUserBatteryUpdate({ userId, level, charging }) {
-      setUserLocations((prev) => ({
-        ...prev,
-        [userId]: {
-          ...(prev[userId] || {}),
-          battery: { level, charging },
-        },
-      }));
-    }
-    socket.on("user-battery-update", handleUserBatteryUpdate);
-    return () => {
-      socket.off("user-battery-update", handleUserBatteryUpdate);
-    };
-  }, [setUserLocations]);
+ 
 
   useEffect(() => {
     function handleRoomMessage(message) {
@@ -576,7 +612,7 @@ useEffect(() => {
 
   const handleSendMessage = useCallback(() => {
     if (!newMessage.trim()) return;
-    if (!socket.connected) {
+    if (!isSocketReady()) {
       showToast("Cannot send message - disconnected from server", "danger");
       return;
     }
@@ -721,11 +757,11 @@ useEffect(() => {
         <div className="absolute top-2 left-2 md:top-4 md:left-4 z-[9999] flex items-centerbg-white px-3 py-1.5 rounded-full border border-[#E5E7EB] shadow-sm">
           <div
             className={`w-2 md:w-3 h-2 md:h-3 rounded-full mr-2 ${
-              socket.connected ? "bg-green-600" : "bg-red-500"
+              isSocketReady() ? "bg-green-600" : "bg-red-500"
             }`}
           />
           <span className="font-medium text-gray-700">
-            {socket.connected ? "Online" : "Offline"}
+            {isSocketReady() ? "Online" : "Offline"}
           </span>
         </div>
 
@@ -960,7 +996,7 @@ useEffect(() => {
         isOpen={showLeaveModal}
         onCancel={() => setShowLeaveModal(false)}
         onConfirm={() => {
-          if (socket.connected) {
+          if (isSocketReady()) {
             socket.emit("leave-room", { roomCode, userId: user.id });
             disconnectSocket();
           }

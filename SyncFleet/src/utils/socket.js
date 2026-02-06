@@ -1,7 +1,8 @@
-// src/utils/socket.js
 import { io } from "socket.io-client";
 
-const SOCKET_URL = "http://localhost:5000"; // Adjust if needed
+const SOCKET_URL =
+  import.meta.env.VITE_SOCKET_URL || "http://localhost:5000";
+
 
 let socketInstance = null;
 
@@ -44,4 +45,8 @@ export const disconnectSocket = () => {
     socketInstance = null;
     console.log("🔌 Socket disconnected manually.");
   }
+};
+
+export const isSocketReady = () => {
+  return socketInstance?.connected === true;
 };
