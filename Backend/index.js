@@ -66,7 +66,7 @@ const io = new Server(server, {
     origin: [
       "http://localhost:5173",
       process.env.FRONTEND_URL,
-     "https://syncfleet-teal.vercel.app/",
+     "https://syncfleet-teal.vercel.app",
     ],
     methods: ["GET", "POST"],
     credentials: true,
@@ -79,7 +79,7 @@ app.use(
     origin: [
       "http://localhost:5173",
       process.env.FRONTEND_URL,
-     "https://syncfleet-teal.vercel.app/",
+     "https://syncfleet-teal.vercel.app",
     ],
     credentials: true,
   })
