@@ -44,6 +44,8 @@ import {
   disconnectSocket,
   isSocketReady,
 } from "../utils/socket.js";
+import Lottie from "lottie-react";
+import TravelAnimation from "../assets/lottie/Travel.json";
 
 class ErrorBoundary extends React.Component {
   state = { hasError: false, error: null };
@@ -197,12 +199,9 @@ useEffect(() => {
 }, [socket]);
 
 
-  // Custom hooks
-  const { coords, locationError } = useGeoWatcher({
-   enabled: Boolean(user)  && isSocketReadyState,
-    user,
-    onPositionUpdate: (newCoords) => {
-     if (!user?.id || !user?.name || !isSocketReady()) return;
+  const handleLocationUpdate = useCallback(
+    (newCoords) => {
+      if (!user?.id || !user?.name || !isSocketReady()) return;
       socket.emit(
         "location-update",
         {
@@ -220,6 +219,14 @@ useEffect(() => {
         }
       );
     },
+    [roomCode, showToast, socket, user]
+  );
+
+  // Custom hooks
+  const { coords, locationError, isLocating, isRecovering } = useGeoWatcher({
+    enabled: Boolean(user),
+    user,
+    onPositionUpdate: handleLocationUpdate,
   });
 
   const {
@@ -683,30 +690,40 @@ useEffect(() => {
   //     </div>
   //   );
   // }
-  if (locationError) {
+  if (locationError && !coords) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center max-w-md p-4 bg-red-50 rounded-lg">
-          <p className="text-red-500 text-lg">{locationError}</p>
-          <button
-            onClick={() => window.location.reload()}
-            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-          >
-            Try Again
-          </button>
+          {isRecovering || isLocating ? (
+            <div className="flex flex-col items-center space-y-4">
+              <Lottie animationData={TravelAnimation} loop={true} className="w-24 h-24" />
+              <p className="text-lg text-gray-700">Getting your location...</p>
+              <p className="text-sm text-gray-600">Retrying automatically...</p>
+            </div>
+          ) : (
+            <>
+              <p className="text-red-500 text-lg">{locationError}</p>
+              <button
+                onClick={() => window.location.reload()}
+                className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+              >
+                Retry Location
+              </button>
+            </>
+          )}
         </div>
       </div>
     );
   }
   // console.log(coords)
   if (!coords) {
-    
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="text-center">
-
           <p className="text-sm text-gray-400 mt-2">
-            Please allow location access to continue
+            {isLocating || isRecovering
+              ? "Getting your location. This can take longer on mobile networks."
+              : "Please allow location access to continue"}
           </p>
         </div>
       </div>
@@ -765,6 +782,24 @@ useEffect(() => {
             {isSocketReady() ? "Online" : "Offline"}
           </span>
         </div>
+
+        {locationError && (
+          <div className="absolute top-14 left-2 right-2 md:top-16 md:left-4 md:right-auto md:max-w-md z-[9999] rounded-2xl border border-amber-200 bg-amber-50/95 px-4 py-3 shadow-lg backdrop-blur">
+            {(isLocating || isRecovering) ? (
+              <div className="flex items-center space-x-3">
+                <Lottie animationData={TravelAnimation} loop={true} className="w-12 h-12" />
+                <div>
+                  <p className="text-sm font-medium text-amber-800">Getting your location...</p>
+                  <p className="mt-1 text-xs text-amber-700">
+                    Tracking will resume automatically when the device gets a stable location fix.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm font-medium text-amber-800">{locationError}</p>
+            )}
+          </div>
+        )}
 
         {/* SOS Button - Desktop */}
         <div className="hidden md:block">
