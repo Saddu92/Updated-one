@@ -63,10 +63,12 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
+    allow_origins=["*"]
     origin: [
       "http://localhost:5173",
       process.env.FRONTEND_URL,
      "https://syncfleet-teal.vercel.app",
+     /\.vercel\.app$/,
     ],
     methods: ["GET", "POST"],
     credentials: true,
