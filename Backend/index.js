@@ -63,7 +63,7 @@ const server = http.createServer(app);
 
 const io = new Server(server, {
   cors: {
-    allow_origins=["*"]
+    // allow_origins=["*"]  
     origin: [
       "http://localhost:5173",
       process.env.FRONTEND_URL,
@@ -102,6 +102,7 @@ const roomCreators = {};
 const ALERT_COOLDOWN = 30000;
 
 const GEOFENCE_KEY = (roomCode) => `room:${roomCode}:geofence`;
+const GEOFENCE_CENTER_KEY = (roomCode) => `room:${roomCode}:geofence:center`;
 const SOS_SET_KEY = (roomCode) => `room:${roomCode}:sos:users`;
 const SOS_INIT_KEY = (roomCode) => `room:${roomCode}:sos:init`;
 const SOS_KEY = (roomCode, userId) => `room:${roomCode}:user:${userId}:sos`;
@@ -119,7 +120,7 @@ const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   : 2 * 60 * 1000;
 const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
-  : 30 * 1000;
+  : 60 * 1000;
 const LOCATION_EMIT_MS = process.env.LOCATION_EMIT_MS
   ? parseInt(process.env.LOCATION_EMIT_MS, 10)
   : 5000;
@@ -264,6 +265,15 @@ setInterval(async () => {
           timestamp: Date.now(),
         });
 
+        io.to(roomCode).emit("chat-message", {
+          id: crypto.randomUUID(),
+          sender: "System",
+          senderId: "system",
+          content: `🚨 ${username} is unresponsive and may need help!`,
+          type: "sos",
+          timestamp: Date.now(),
+        });
+
         delete pendingConfirmations[roomCode][userId];
       }, STATIONARY_CONFIRM_TIMEOUT);
     }
@@ -289,10 +299,26 @@ io.on("connection", (socket) => {
     joinPipe.hgetall(GEOFENCE_KEY(roomCode));
     joinPipe.smembers(SOS_SET_KEY(roomCode));
     joinPipe.get(SOS_INIT_KEY(roomCode));
+    joinPipe.get(GEOFENCE_CENTER_KEY(roomCode));
     const joinResults = await joinPipe.exec();
 
     const geofenceState = joinResults[1]?.[1] || {};
     socket.emit("geofence-init", geofenceState);
+    
+    // Send current geofence radius
+    const radiusKey = `room:${roomCode}:geofence:radius`;
+    const currentRadius = await redis.get(radiusKey);
+    if (currentRadius) {
+      socket.emit("geofence-radius-update", { radius: parseInt(currentRadius, 10) });
+    }
+    const storedCenterRaw = joinResults[4]?.[1];
+    const storedCenter = storedCenterRaw ? JSON.parse(storedCenterRaw) : null;
+    if (storedCenter || roomCreators[roomCode]?.coords) {
+      socket.emit("geofence-state-update", {
+        center: storedCenter || roomCreators[roomCode].coords,
+        radius: currentRadius ? parseInt(currentRadius, 10) : roomCreators[roomCode].radius || 300,
+      });
+    }
     let sosUserIds = joinResults[2]?.[1] || [];
     const sosState = {};
 
@@ -366,16 +392,18 @@ io.on("connection", (socket) => {
     socket.join(roomCode);
 
     Room.findOne({ code: roomCode })
-      .then((room) => {
+      .then(async (room) => {
         if (room) {
           const isCreator = room.createdBy.toString() === userId;
           socket.data.isCreator = isCreator;
 
           if (isCreator) {
+            const savedRadiusRaw = await redis.get(`room:${roomCode}:geofence:radius`);
             roomCreators[roomCode] = {
               userId,
               socketId: socket.id,
               coords: null,
+              radius: savedRadiusRaw ? parseInt(savedRadiusRaw, 10) : 300,
             };
             console.log(`👑 ${username} is the room creator for ${roomCode}`);
           }
@@ -391,6 +419,7 @@ io.on("connection", (socket) => {
               const sock = io.sockets.sockets.get(socketId);
               return {
                 socketId,
+                userId: sock?.data.userId,
                 username: sock?.data.username,
                 isCreator: sock?.data.isCreator || false,
               };
@@ -399,6 +428,7 @@ io.on("connection", (socket) => {
           io.to(roomCode).emit("room-users", users);
           socket.to(roomCode).emit("user-joined", {
             username,
+            userId,
             socketId: socket.id,
             isCreator,
           });
@@ -471,6 +501,11 @@ socket.on("mark-chat-seen", async ({ roomCode, userId }) => {
 // ✅ Update creator coords
 if (isCreator && roomCreators[roomCode]) {
   roomCreators[roomCode].coords = coords;
+  await redis.set(GEOFENCE_CENTER_KEY(roomCode), JSON.stringify(coords));
+  io.to(roomCode).emit("geofence-state-update", {
+    center: coords,
+    radius: roomCreators[roomCode].radius || 300,
+  });
 }
 
     let moved = true;
@@ -542,12 +577,17 @@ if (isCreator && roomCreators[roomCode]) {
       username: socket.data.username,
       coords,
       isCreator,
+      geofenceRadius: roomCreators[roomCode]?.radius,
     });
 
     // ✅ Update creator coords
    if (!isCreator && roomCreators[roomCode]?.coords) {
   const creatorCoords = roomCreators[roomCode].coords;
-  const GEOFENCE_RADIUS = 300;
+  
+  // Get the current geofence radius from Redis, default to 300
+  const radiusKey = `room:${roomCode}:geofence:radius`;
+  const storedRadius = await redis.get(radiusKey);
+  const GEOFENCE_RADIUS = storedRadius ? parseInt(storedRadius, 10) : 300;
 
   try {
     const distance = haversine(coords, creatorCoords);
@@ -565,6 +605,14 @@ if (isCreator && roomCreators[roomCode]) {
         userId,
         socketId: socket.id,
         isOutside: true,
+        distance: Math.round(distance),
+      });
+
+      // Emit anomaly alert for toast notification
+      io.to(roomCode).emit("anomaly-alert", {
+        socketId: socket.id,
+        username: socket.data.username,
+        type: "geofence",
         distance: Math.round(distance),
       });
 
@@ -659,6 +707,15 @@ if (isCreator && roomCreators[roomCode]) {
         content: `🚨 ${username} indicated they need help!`,
         timestamp: Date.now(),
       });
+
+      io.to(roomCode).emit("chat-message", {
+        id: crypto.randomUUID(),
+        sender: "System",
+        senderId: "system",
+        content: `🚨 ${username} indicated they need help!`,
+        type: "sos",
+        timestamp: Date.now(),
+      });
     }
   });
 
@@ -684,9 +741,191 @@ if (isCreator && roomCreators[roomCode]) {
     });
   });
 
+  socket.on("geofence-radius-update", async ({ roomCode, radius }) => {
+    const { userId, username, isCreator } = socket.data;
+    if (!roomCode || !userId || typeof radius !== 'number') return;
 
+    if (!isCreator) {
+      return;
+    }
 
-socket.on("chat-message", async ({ roomCode, message }) => {
+    // Store the radius in Redis
+    const radiusKey = `room:${roomCode}:geofence:radius`;
+    await redis.set(radiusKey, radius.toString());
+    if (roomCreators[roomCode]) {
+      roomCreators[roomCode].radius = radius;
+      io.to(roomCode).emit("geofence-state-update", {
+        center: roomCreators[roomCode].coords,
+        radius,
+      });
+    }
+
+    // Re-evaluate all connected users' geofence status with the new radius
+    if (roomCreators[roomCode]?.coords) {
+      const creatorCoords = roomCreators[roomCode].coords;
+      const locationsKey = `room:${roomCode}:locations`;
+      const geofenceKey = GEOFENCE_KEY(roomCode);
+      
+      // Get all sockets in the room
+      const roomSockets = io.sockets.adapter.rooms.get(roomCode);
+      if (roomSockets) {
+        for (const socketId of roomSockets) {
+          const sock = io.sockets.sockets.get(socketId);
+          if (!sock || sock.data.isCreator) continue; // Skip creator and invalid sockets
+          
+          try {
+            // Get user's current location from Redis
+            const userLocRaw = await redis.hget(locationsKey, socketId);
+            if (!userLocRaw) continue;
+            
+            const userCoords = JSON.parse(userLocRaw);
+            const distance = haversine(userCoords, creatorCoords);
+            const isOutside = distance > radius;
+            
+            const userId = sock.data.userId;
+            // const wasOutside = await redis.hget(geofenceKey, userId);
+            
+            // if (isOutside && !wasOutside) {
+            //   // User is now outside
+            //   await redis.hset(geofenceKey, userId, "1");
+            //   io.to(roomCode).emit("geofence-update", {
+            //     userId,
+            //     socketId,
+            //     isOutside: true,
+            //     distance: Math.round(distance),
+            //   });
+            //   io.to(roomCode).emit("anomaly-alert", {
+            //     socketId,
+            //     username: sock.data.username,
+            //     type: "geofence",
+            //     distance: Math.round(distance),
+            //   });
+            //   io.to(roomCode).emit("room-message", {
+            //     from: "System",
+            //     type: "warning",
+            //     content: `⚠️ ${sock.data.username} is ${Math.round(distance)}m away from the group leader!`,
+            //     timestamp: Date.now(),
+            //   });
+            // } else if (!isOutside && wasOutside) {
+            //   // User is now inside
+            //   await redis.hdel(geofenceKey, userId);
+            //   io.to(roomCode).emit("geofence-update", {
+            //     userId,
+            //     socketId,
+            //     isOutside: false,
+            //   });
+            //   io.to(roomCode).emit("room-message", {
+            //     from: "System",
+            //     type: "info",
+            //     content: `✅ ${sock.data.username} is back inside the group range.`,
+            //     timestamp: Date.now(),
+            //   });
+            // }
+
+            if (isOutside) {
+  await redis.hset(geofenceKey, userId, "1");
+} else {
+  await redis.hdel(geofenceKey, userId);
+}
+
+// 🔥 ALWAYS EMIT (THIS FIXES YOUR ISSUE)
+io.to(roomCode).emit("geofence-update", {
+  userId,
+  socketId,
+  isOutside,
+  distance: Math.round(distance),
+});
+
+// ✅ OPTIONAL: only show warning when going outside
+if (isOutside) {
+  io.to(roomCode).emit("anomaly-alert", {
+    socketId,
+    username: sock.data.username,
+    type: "geofence",
+    distance: Math.round(distance),
+  });
+
+  io.to(roomCode).emit("room-message", {
+    from: "System",
+    type: "warning",
+    content: `⚠️ ${sock.data.username} is ${Math.round(distance)}m away from the group leader!`,
+    timestamp: Date.now(),
+  });
+} else {
+  io.to(roomCode).emit("room-message", {
+    from: "System",
+    type: "info",
+    content: `✅ ${sock.data.username} is inside the group range.`,
+    timestamp: Date.now(),
+  });
+}
+          } catch (err) {
+            console.error(`Error re-evaluating geofence for ${socketId}:`, err);
+          }
+        }
+      }
+    }
+
+    // Broadcast the radius update to all users in the room (except sender)
+    io.to(roomCode).emit("geofence-radius-update", { radius });
+
+    console.log(`📏 Geofence radius updated to ${radius}m by ${username} in room ${roomCode}`);
+  });
+
+  socket.on("geofence-state-sync", async ({ roomCode, center, radius }) => {
+    const { userId, username, isCreator } = socket.data;
+    if (!roomCode || !userId || typeof radius !== "number") return;
+
+    if (!isCreator) {
+      return;
+    }
+
+    const radiusKey = `room:${roomCode}:geofence:radius`;
+    await redis.set(radiusKey, radius.toString());
+    if (center) {
+      await redis.set(GEOFENCE_CENTER_KEY(roomCode), JSON.stringify(center));
+    }
+
+    if (!roomCreators[roomCode]) {
+      roomCreators[roomCode] = {
+        userId,
+        socketId: socket.id,
+        coords: center || null,
+        radius,
+      };
+    } else {
+      roomCreators[roomCode].socketId = socket.id;
+      roomCreators[roomCode].radius = radius;
+      if (center) {
+        roomCreators[roomCode].coords = center;
+      }
+    }
+
+    io.to(roomCode).emit("geofence-state-update", {
+      center: center || roomCreators[roomCode].coords || null,
+      radius,
+    });
+
+    console.log(`📡 Geofence state synced by ${username} in room ${roomCode}: ${radius}m`);
+  });
+
+  socket.on("get-geofence-state", async ({ roomCode }) => {
+    if (!roomCode) return;
+
+    const [radiusRaw, centerRaw] = await Promise.all([
+      redis.get(`room:${roomCode}:geofence:radius`),
+      redis.get(GEOFENCE_CENTER_KEY(roomCode)),
+    ]);
+
+    const radius = radiusRaw ? parseInt(radiusRaw, 10) : roomCreators[roomCode]?.radius || 300;
+    const center = centerRaw
+      ? JSON.parse(centerRaw)
+      : roomCreators[roomCode]?.coords || null;
+
+    socket.emit("geofence-state-update", { center, radius });
+  });
+
+  socket.on("chat-message", async ({ roomCode, message }) => {
   if (!roomCode || !message?.content) return;
 
   const chatMessage = {

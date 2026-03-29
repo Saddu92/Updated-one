@@ -72,7 +72,7 @@ const StationaryModal = ({ isOpen, onYes, onNo }) => {
         {/* Auto SOS Notice */}
         <div className="mt-5 rounded-lg bg-[#FEF2F2] border border-red-200 px-4 py-3 text-center">
           <p className="text-xs font-medium text-[#991B1B]">
-            If there is no response, an SOS alert will be sent automatically.
+            If there is no response within 2 minutes, an SOS alert will be sent automatically.
           </p>
         </div>
       </div>

@@ -9,8 +9,10 @@ export const PATH_HISTORY_LIMIT = 100;
 export const GEOLOCATION_TIMEOUT = 10000;
 export const DEFAULT_TRAIL_DURATION = 5; // minutes
 export const DEVIATION_THRESHOLD = 150; // meters
+export const STATIONARY_CONFIRM_TIMEOUT =
+  Number(import.meta.env.VITE_STATIONARY_CONFIRM_TIMEOUT_MS) || 60000; // 1 minute
 export const SOS_DURATION =
-  Number(import.meta.env.VITE_SOS_DURATION_MS) || 30000; // 30 seconds
+  Number(import.meta.env.VITE_SOS_DURATION_MS) || 120000; // 2 minutes
 import haversine from "haversine-distance";
 export const COLORS = [
   "#3b82f6",

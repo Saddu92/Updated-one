@@ -1,7 +1,12 @@
 // hooks/useStationaryDetection.js
 import { useRef, useCallback, useState, useEffect } from "react";
 import haversine from "haversine-distance";
-import { STATIONARY_LIMIT, MOVEMENT_THRESHOLD, SOS_DURATION } from "../utils/helper.js";
+import {
+  STATIONARY_LIMIT,
+  MOVEMENT_THRESHOLD,
+  SOS_DURATION,
+  STATIONARY_CONFIRM_TIMEOUT,
+} from "../utils/helper.js";
 
 export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }) => {
   const lastPositionRef = useRef(null);
@@ -53,7 +58,7 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
               const socket = window.__syncFleetSocket;
               socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'no' });
             } catch (e) {}
-          }, SOS_DURATION);
+          }, STATIONARY_CONFIRM_TIMEOUT);
         }
       } else {
         lastPositionRef.current = newCoords;
@@ -91,7 +96,7 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
               const socket = window.__syncFleetSocket;
               socket?.emit?.('stationary-response', { roomCode: window.__syncFleetRoomCode, response: 'no' });
             } catch (e) {}
-          }, SOS_DURATION);
+          }, STATIONARY_CONFIRM_TIMEOUT);
         }
       } catch (e) {
         // ignore
@@ -105,7 +110,7 @@ export const useStationaryDetection = ({ mySocketId, setUserLocations, emitSOS }
   }, [emitSOS, mySocketId, setUserLocations, showStationaryPrompt]);
 
     // Programmatically trigger the stationary prompt (used when server asks)
-    const triggerStationaryPrompt = useCallback((message, timeout = SOS_DURATION) => {
+    const triggerStationaryPrompt = useCallback((message, timeout = STATIONARY_CONFIRM_TIMEOUT) => {
       setShowStationaryPrompt(true);
       clearTimeout(stationaryPromptTimeout.current);
       stationaryPromptTimeout.current = setTimeout(() => {

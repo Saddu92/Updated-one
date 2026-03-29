@@ -27,6 +27,7 @@ import {
   DEFAULT_TRAIL_DURATION,
   INACTIVE_THRESHOLD,
   SOS_DURATION,
+  isOutsideGeofence,
 } from "../utils/helper.js";
 import { useRoomSocket } from "../hooks/useRoomSocket.js";
 import { useGeoWatcher } from "../hooks/useGeoWatcher.js";
@@ -229,6 +230,38 @@ useEffect(() => {
     onPositionUpdate: handleLocationUpdate,
   });
 
+  const handleAnomalyAlert = useCallback((data) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        type: "anomaly",
+        sender: "System",
+        content:
+          data.type === "sos"
+            ? `ðŸš¨ SOS Alert from ${data.username}`
+            : `âš ï¸ ${data.username} is ${Math.round(data.distance)}m away from the group!`,
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+  }, []);
+
+  const handleCreatorIdentified = useCallback((socketId) => {
+    setCreatorSocketId(socketId);
+    console.log(`ðŸ‘‘ Creator identified: ${socketId}`);
+  }, []);
+
+  const handleGeofenceRadiusUpdate = useCallback((radius) => {
+    setGeofence((prev) => ({ ...prev, radius }));
+    console.log(`ðŸ“ Geofence radius updated to: ${radius}m`);
+  }, []);
+
+  const handleGeofenceStateUpdate = useCallback(({ center, radius }) => {
+    setGeofence((prev) => ({
+      center: center || prev.center,
+      radius: typeof radius === "number" ? radius : prev.radius,
+    }));
+  }, []);
+
   const {
     mySocketId,
     isConnecting,
@@ -266,6 +299,16 @@ useEffect(() => {
     onCreatorIdentified: (socketId) => { // ✅ NEW CALLBACK
       setCreatorSocketId(socketId);
       console.log(`👑 Creator identified: ${socketId}`);
+    },
+    onGeofenceRadiusUpdate: (radius) => { // ✅ NEW CALLBACK
+      setGeofence((prev) => ({ ...prev, radius }));
+      console.log(`📏 Geofence radius updated to: ${radius}m`);
+    },
+    onGeofenceStateUpdate: ({ center, radius }) => {
+      setGeofence((prev) => ({
+        center: center || prev.center,
+        radius: typeof radius === "number" ? radius : prev.radius,
+      }));
     },
   });
 
@@ -326,7 +369,7 @@ socket.on("chat-message", (msg) => {
   };
 }, [socket, roomCode]);
 
-useEffect(() => {
+  useEffect(() => {
   if (!user?.id || !isSocketReadyState) return;
 
   const handleUnread = (count) => {
@@ -358,6 +401,12 @@ useEffect(() => {
     setUnreadCount(0);
   }
 }, [chatOpen, socket, roomCode, user]);
+
+  useEffect(() => {
+    if (!socket || !roomCode || !user?.id) return;
+
+    socket.emit("get-geofence-state", { roomCode });
+  }, [socket, roomCode, user?.id]);
 
 
   // Sync creator socket ID from hook
@@ -421,7 +470,7 @@ useEffect(() => {
   useEffect(() => {
     function onServerAsk(e) {
       const data = e.detail || {};
-      const timeout = data.timeout || 30000;
+      const timeout = data.timeout || 120000;
       if (typeof window !== 'undefined' && triggerStationaryPrompt) {
         triggerStationaryPrompt(data.message || 'Are you alright?', timeout);
       }
@@ -488,7 +537,7 @@ useEffect(() => {
           radius: prev.radius || 300,
         }));
       }
-    } else if (creatorSocketId && userLocations[creatorSocketId]?.coords) {
+    } else if (!geofence.center && creatorSocketId && userLocations[creatorSocketId]?.coords) {
       // Members use creator's position
       const newCreatorCoords = userLocations[creatorSocketId].coords;
       setGeofence((prev) => ({
@@ -497,7 +546,7 @@ useEffect(() => {
       }));
       setCreatorCoords(newCreatorCoords);
     }
-  }, [coords, isRoomCreator, creatorSocketId, userLocations]);
+  }, [coords, isRoomCreator, creatorSocketId, userLocations, geofence.center]);
 
   // Set recenter only on initial mount
   useEffect(() => {
@@ -659,6 +708,25 @@ useEffect(() => {
     ).length;
   }, [userLocations]);
 
+  const outsideUsers = useMemo(() => {
+    const next = {};
+
+    Object.entries(userLocations).forEach(([socketId, location]) => {
+      if (!location?.coords) return;
+      if (socketId === creatorSocketId) return;
+
+      if (isOutsideGeofence(location.coords, geofence)) {
+        next[socketId] = true;
+      }
+    });
+
+    if (!isRoomCreator && coords && isOutsideGeofence(coords, geofence) && mySocketId) {
+      next[mySocketId] = true;
+    }
+
+    return next;
+  }, [userLocations, creatorSocketId, geofence, isRoomCreator, coords, mySocketId]);
+
   const getUserColor = useCallback(
     (socketId) => {
       const index = activeUsers.findIndex((u) => u.socketId === socketId);
@@ -762,6 +830,7 @@ useEffect(() => {
           mySocketId={mySocketId}
           getUserColor={getUserColor}
           geofence={geofence}
+          alertUsers={outsideUsers}
           groupCenter={null}
           visibleHazards={visibleHazards}
           sourceCoords={sourceCoords}
@@ -994,10 +1063,20 @@ useEffect(() => {
         trailDuration={trailDuration}
         setTrailDuration={setTrailDuration}
         geofenceRadius={geofence.radius}
-        setGeofenceRadius={(radius) =>
-          setGeofence((prev) => ({ ...prev, radius }))
-        }
+        setGeofenceRadius={(radius) => {
+          setGeofence((prev) => ({ ...prev, radius }));
+          // Emit geofence radius update to all users
+          if (socket && roomCode) {
+            socket.emit("geofence-radius-update", { roomCode, radius });
+            socket.emit("geofence-state-sync", {
+              roomCode,
+              radius,
+              center: isRoomCreator ? coords : geofence.center,
+            });
+          }
+        }}
         creatorSocketId={creatorSocketId}
+        isCreator={isRoomCreator}
       />
 
       {/* ================= CHAT ================= */}

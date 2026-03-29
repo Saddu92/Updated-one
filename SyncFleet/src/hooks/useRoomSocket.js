@@ -21,6 +21,8 @@ export const useRoomSocket = ({
   onRoomMessage,
   onRoomUsers,
   onCreatorIdentified, // ✅ NEW
+  onGeofenceRadiusUpdate, // ✅ NEW
+  onGeofenceStateUpdate,
 }) => {
   const [mySocketId, setMySocketId] = useState(null);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -35,6 +37,35 @@ export const useRoomSocket = ({
   const stationaryCheckIntervalRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const lastSeenRef = useRef({});
+  const geofenceInitRef = useRef({});
+  const onLocationUpdateRef = useRef(onLocationUpdate);
+  const onAnomalyAlertRef = useRef(onAnomalyAlert);
+  const onUserJoinedRef = useRef(onUserJoined);
+  const onUserLeftRef = useRef(onUserLeft);
+  const onRoomUsersRef = useRef(onRoomUsers);
+  const onCreatorIdentifiedRef = useRef(onCreatorIdentified);
+  const onGeofenceRadiusUpdateRef = useRef(onGeofenceRadiusUpdate);
+  const onGeofenceStateUpdateRef = useRef(onGeofenceStateUpdate);
+
+  useEffect(() => {
+    onLocationUpdateRef.current = onLocationUpdate;
+    onAnomalyAlertRef.current = onAnomalyAlert;
+    onUserJoinedRef.current = onUserJoined;
+    onUserLeftRef.current = onUserLeft;
+    onRoomUsersRef.current = onRoomUsers;
+    onCreatorIdentifiedRef.current = onCreatorIdentified;
+    onGeofenceRadiusUpdateRef.current = onGeofenceRadiusUpdate;
+    onGeofenceStateUpdateRef.current = onGeofenceStateUpdate;
+  }, [
+    onLocationUpdate,
+    onAnomalyAlert,
+    onUserJoined,
+    onUserLeft,
+    onRoomUsers,
+    onCreatorIdentified,
+    onGeofenceRadiusUpdate,
+    onGeofenceStateUpdate,
+  ]);
 
   useEffect(() => {
     if (!isUserReady || !user?.id) return;
@@ -63,7 +94,7 @@ export const useRoomSocket = ({
       showToast("Disconnected from server", "danger");
     };
 
-    const handleUserJoined = ({ username, socketId, isCreator }) => {
+    const handleUserJoined = ({ username, userId, socketId, isCreator }) => {
       // Remove from disconnected users if they were disconnected (match by username)
       setDisconnectedUsers((prev) => {
         const next = { ...prev };
@@ -85,14 +116,14 @@ export const useRoomSocket = ({
 
       setActiveUsers((prev) => [
         ...prev.filter((u) => u.socketId !== socketId),
-        { socketId, username, isCreator }, // ✅ Include isCreator
+        { socketId, userId, username, isCreator }, // ✅ Include isCreator
       ]);
 
       // ✅ Track creator socket ID
       if (isCreator) {
         setCreatorSocketId(socketId);
-        if (onCreatorIdentified) {
-          onCreatorIdentified(socketId);
+        if (onCreatorIdentifiedRef.current) {
+          onCreatorIdentifiedRef.current(socketId);
         }
         console.log(`👑 Creator identified: ${username} (${socketId})`);
       }
@@ -107,7 +138,9 @@ export const useRoomSocket = ({
         `${username} joined the room${isCreator ? " (Creator)" : ""}`,
         "info",
       );
-      if (onUserJoined) onUserJoined({ username, socketId, isCreator });
+      if (onUserJoinedRef.current) {
+        onUserJoinedRef.current({ username, socketId, isCreator });
+      }
     };
 
     const handleUserStatus = ({ userId, status }) => {
@@ -156,7 +189,7 @@ export const useRoomSocket = ({
         return next;
       });
       delete lastSeenRef.current[socketId];
-      if (onUserLeft) onUserLeft({ socketId });
+      if (onUserLeftRef.current) onUserLeftRef.current({ socketId });
     };
 
     const handleLocationUpdate = ({
@@ -164,9 +197,24 @@ export const useRoomSocket = ({
       username,
       coords,
       isCreator,
+      geofenceRadius,
     }) => {
       const now = Date.now();
       lastSeenRef.current[socketId] = now;
+
+      if (
+        typeof geofenceRadius === "number" &&
+        onGeofenceRadiusUpdateRef.current
+      ) {
+        onGeofenceRadiusUpdateRef.current(geofenceRadius);
+      }
+      if (isCreator && onGeofenceStateUpdateRef.current) {
+        onGeofenceStateUpdateRef.current({
+          center: coords,
+          radius: typeof geofenceRadius === "number" ? geofenceRadius : undefined,
+        });
+      }
+
       setUserLocations((prev) => {
         const existing = prev[socketId] || {};
         const filteredPath = [
@@ -193,8 +241,8 @@ export const useRoomSocket = ({
       // ✅ Update creator socket ID if this is creator
       if (isCreator && !creatorSocketId) {
         setCreatorSocketId(socketId);
-        if (onCreatorIdentified) {
-          onCreatorIdentified(socketId);
+        if (onCreatorIdentifiedRef.current) {
+          onCreatorIdentifiedRef.current(socketId);
         }
         console.log(`👑 Creator position updated: ${username}`);
       }
@@ -206,11 +254,22 @@ export const useRoomSocket = ({
           .slice(-PATH_HISTORY_LIMIT),
       }));
 
-      if (onLocationUpdate)
-        onLocationUpdate({ socketId, username, coords, isCreator });
+      if (onLocationUpdateRef.current) {
+        onLocationUpdateRef.current({ socketId, username, coords, isCreator });
+      }
     };
 
     const handleGeofenceUpdate = ({ userId, socketId, isOutside }) => {
+      if (userId) {
+        geofenceInitRef.current = {
+          ...geofenceInitRef.current,
+          [userId]: isOutside ? "1" : undefined,
+        };
+        if (!isOutside) {
+          delete geofenceInitRef.current[userId];
+        }
+      }
+
       setAlertUsers((prev) => {
         const next = { ...prev };
         if (isOutside) next[socketId] = true;
@@ -248,27 +307,70 @@ export const useRoomSocket = ({
         }, SOS_DURATION);
       }
 
-      if (onAnomalyAlert) onAnomalyAlert(data);
+      if (onAnomalyAlertRef.current) onAnomalyAlertRef.current(data);
     };
     const handleGeofenceInit = (data) => {
-      setAlertUsers(data || {});
+      geofenceInitRef.current = data || {};
+
+      setAlertUsers(() => {
+        if (!data || !activeUsers.length) return {};
+
+        const mapped = {};
+        activeUsers.forEach((roomUser) => {
+          if (roomUser?.socketId && roomUser?.userId && data[roomUser.userId]) {
+            mapped[roomUser.socketId] = true;
+          }
+        });
+        return mapped;
+      });
     };
 
+    const handleGeofenceRadiusUpdate = ({ radius }) => {
+      if (onGeofenceRadiusUpdateRef.current) {
+        onGeofenceRadiusUpdateRef.current(radius);
+      }
+    };
+
+    const handleGeofenceStateUpdate = ({ center, radius }) => {
+      if (onGeofenceStateUpdateRef.current) {
+        onGeofenceStateUpdateRef.current({ center, radius });
+      }
+      if (
+        typeof radius === "number" &&
+        onGeofenceRadiusUpdateRef.current
+      ) {
+        onGeofenceRadiusUpdateRef.current(radius);
+      }
+    };
 
     const handleRoomUsers = (users) => {
       setActiveUsers(users);
+
+      if (geofenceInitRef.current && Object.keys(geofenceInitRef.current).length) {
+        const mapped = {};
+        users.forEach((roomUser) => {
+          if (
+            roomUser?.socketId &&
+            roomUser?.userId &&
+            geofenceInitRef.current[roomUser.userId]
+          ) {
+            mapped[roomUser.socketId] = true;
+          }
+        });
+        setAlertUsers(mapped);
+      }
 
       // ✅ Find and set creator from user list
       const creator = users.find((u) => u.isCreator);
       if (creator && creator.socketId !== creatorSocketId) {
         setCreatorSocketId(creator.socketId);
-        if (onCreatorIdentified) {
-          onCreatorIdentified(creator.socketId);
+        if (onCreatorIdentifiedRef.current) {
+          onCreatorIdentifiedRef.current(creator.socketId);
         }
         console.log(`👑 Creator found in user list: ${creator.username}`);
       }
 
-      if (onRoomUsers) onRoomUsers(users);
+      if (onRoomUsersRef.current) onRoomUsersRef.current(users);
     };
 
     const handleUserStationary = ({ socketId, username, since }) => {
@@ -298,8 +400,19 @@ export const useRoomSocket = ({
       if (showToast) showToast(`${username} is moving again`, "info");
     };
     const handleSosInit = (data) => {
-  setAlertUsers(data || {});
-};
+      const sosState = data || {};
+      setUserLocations((prev) => {
+        const next = { ...prev };
+        Object.entries(sosState).forEach(([socketId, isActive]) => {
+          next[socketId] = {
+            ...(next[socketId] || {}),
+            isSOS: Boolean(isActive),
+            isStationary: Boolean(isActive),
+          };
+        });
+        return next;
+      });
+    };
 
 
     const handleUserSOSCleared = ({ socketId, username }) => {
@@ -312,13 +425,6 @@ export const useRoomSocket = ({
           stationarySince: null,
         },
       }));
-
-      // ✅ REMOVE FROM ALERT USERS SET
-      setAlertUsers((prev) => {
-        const next = { ...prev };
-        delete next[socketId];
-        return next;
-      });
 
       if (showToast) showToast(`${username} is OK`, "info");
     };
@@ -358,6 +464,8 @@ export const useRoomSocket = ({
     socket.on("user-status", handleUserStatus);
     socket.on("geofence-update", handleGeofenceUpdate);
     socket.on("geofence-init", handleGeofenceInit);
+    socket.on("geofence-radius-update", handleGeofenceRadiusUpdate);
+    socket.on("geofence-state-update", handleGeofenceStateUpdate);
     socket.on("sos-init", handleSosInit);
 
 
@@ -407,6 +515,8 @@ export const useRoomSocket = ({
       socket.off("room-users", handleRoomUsers);
       socket.off("geofence-update", handleGeofenceUpdate);
       socket.off("geofence-init", handleGeofenceInit);
+      socket.off("geofence-radius-update", handleGeofenceRadiusUpdate);
+      socket.off("geofence-state-update", handleGeofenceStateUpdate);
       socket.off("sos-init", handleSosInit);
 
 
@@ -420,12 +530,6 @@ export const useRoomSocket = ({
     trailExpiryMs,
     showToast,
     playAlertSound,
-    onLocationUpdate,
-    onAnomalyAlert,
-    onUserJoined,
-    onUserLeft,
-    onRoomUsers,
-    onCreatorIdentified,
     creatorSocketId,
   ]);
 

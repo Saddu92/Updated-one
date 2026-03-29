@@ -45,6 +45,8 @@ const MapDisplay = ({
   disconnectedUsers = {},
 }) => {
   const [mapReady, setMapReady] = useState(false);
+  const hasActiveGeofence =
+    Boolean(geofence?.center) && Number(geofence?.radius) > 0;
   const calculateDeviation = (userCoords) => {
     // ✅ Calculate deviation from geofence center (creator's position)
     if (!geofence.center || !userCoords) return 0;
@@ -87,7 +89,11 @@ const MapDisplay = ({
 
       {/* Geofence */}
       {geofence.center && (
-        <GeofenceCircle center={geofence.center} radius={geofence.radius} />
+        <GeofenceCircle 
+          key={`geofence-${geofence.center.lat}-${geofence.center.lng}-${geofence.radius}`} 
+          center={geofence.center} 
+          radius={geofence.radius} 
+        />
       )}
 
       {/* Hazards */}
@@ -133,7 +139,11 @@ const MapDisplay = ({
           if (u.isStationary) markerType = "stationary";
           else if (u.isSOS) markerType = "sos";
           else if (!isCreator && alertUsers[id]) markerType = "outside";
-          else if (!isCreator && deviationDistance > DEVIATION_THRESHOLD)
+          else if (
+            !isCreator &&
+            !hasActiveGeofence &&
+            deviationDistance > DEVIATION_THRESHOLD
+          )
             markerType = "far";
 
           return (

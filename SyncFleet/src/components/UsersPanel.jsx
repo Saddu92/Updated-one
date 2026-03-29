@@ -17,6 +17,7 @@ const UsersPanel = ({
   geofenceRadius,
   setGeofenceRadius,
   creatorSocketId,
+  isCreator,
 }) => {
   if (!isOpen) return null;
 
@@ -117,51 +118,55 @@ const UsersPanel = ({
         })}
       </div>
 
-      {/* Trail duration */}
-      <div className="px-4 py-3 border-t border-[#E5E7EB]">
-        <label className="block text-xs text-[#6B7280] mb-1">
-          Trail duration
-        </label>
-        <select
-          value={trailDuration}
-          onChange={(e) => setTrailDuration(Number(e.target.value))}
-          className="w-full px-3 py-2 border border-[#E5E7EB] rounded-md text-sm focus:ring-2 focus:ring-blue-300"
-        >
-          <option value={5}>5 minutes</option>
-          <option value={10}>10 minutes</option>
-          <option value={15}>15 minutes</option>
-        </select>
-      </div>
-
-      {/* Geofence radius (FIXED) */}
-      <div className="px-4 py-3 border-t border-[#E5E7EB] bg-[#F9FAFB]">
-        <label className="block text-xs font-medium text-[#374151] mb-1">
-          Geofence radius (meters)
-        </label>
-
-        {/* Slider – safer than free input */}
-        <input
-          type="range"
-          min={100}
-          max={2000}
-          step={50}
-          value={geofenceRadius}
-          onChange={(e) => setGeofenceRadius(Number(e.target.value))}
-          className="w-full accent-[#2563EB]"
-        />
-
-        <div className="flex justify-between text-xs text-[#6B7280] mt-1">
-          <span>100 m</span>
-          <span className="font-semibold text-[#111827]">
-            {geofenceRadius} m
-          </span>
-          <span>2000 m</span>
+      {/* Trail duration - Only for admin */}
+      {isCreator && (
+        <div className="px-4 py-3 border-t border-[#E5E7EB]">
+          <label className="block text-xs text-[#6B7280] mb-1">
+            Trail duration
+          </label>
+          <select
+            value={trailDuration}
+            onChange={(e) => setTrailDuration(Number(e.target.value))}
+            className="w-full px-3 py-2 border border-[#E5E7EB] rounded-md text-sm focus:ring-2 focus:ring-blue-300"
+          >
+            <option value={5}>5 minutes</option>
+            <option value={10}>10 minutes</option>
+            <option value={15}>15 minutes</option>
+          </select>
         </div>
+      )}
 
-        <p className="mt-1 text-xs text-[#6B7280]">
-          Members should stay within this distance from the leader
-        </p>
-      </div>
+      {/* Geofence radius - Only for admin */}
+      {isCreator && (
+        <div className="px-4 py-3 border-t border-[#E5E7EB] bg-[#F9FAFB]">
+          <label className="block text-xs font-medium text-[#374151] mb-1">
+            Geofence radius (meters)
+          </label>
+
+          {/* Slider – safer than free input */}
+          <input
+            type="range"
+            min={100}
+            max={2000}
+            step={50}
+            value={geofenceRadius}
+            onChange={(e) => setGeofenceRadius(Number(e.target.value))}
+            className="w-full accent-[#2563EB]"
+          />
+
+          <div className="flex justify-between text-xs text-[#6B7280] mt-1">
+            <span>100 m</span>
+            <span className="font-semibold text-[#111827]">
+              {geofenceRadius} m
+            </span>
+            <span>2000 m</span>
+          </div>
+
+          <p className="mt-1 text-xs text-[#6B7280]">
+            Members should stay within this distance from the leader
+          </p>
+        </div>
+      )}
     </div>
   );
 };
@@ -182,6 +187,7 @@ UsersPanel.propTypes = {
   geofenceRadius: PropTypes.number.isRequired,
   setGeofenceRadius: PropTypes.func.isRequired,
   creatorSocketId: PropTypes.string,
+  isCreator: PropTypes.bool.isRequired,
 };
 
 export default UsersPanel;
