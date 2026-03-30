@@ -117,10 +117,10 @@ const applySosState = (pipe, roomCode, userId, isSos) => {
 };
 const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   ? parseInt(process.env.STATIONARY_THRESHOLD_MS, 10)
-  : 2 * 60 * 1000;
+  : 30 * 1000; // 30 seconds in test mode
 const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
-  : 60 * 1000;
+  : 10 * 1000; // 10 seconds in test mode
 const LOCATION_EMIT_MS = process.env.LOCATION_EMIT_MS
   ? parseInt(process.env.LOCATION_EMIT_MS, 10)
   : 5000;
@@ -205,10 +205,14 @@ setInterval(async () => {
       const username = sock.data?.username || "Unknown";
 
       try {
+        const durationText = STATIONARY_THRESHOLD >= 60000
+          ? `${Math.round(STATIONARY_THRESHOLD / 60000)} minute(s)`
+          : `${Math.round(STATIONARY_THRESHOLD / 1000)} second(s)`;
+
+        console.log(`→ stationary-confirm request for room=${roomCode}, user=${username}, timeout=${STATIONARY_CONFIRM_TIMEOUT}ms`);
+
         sock.emit("stationary-confirm", {
-          message: `We've noticed you haven't moved for ${Math.round(
-            STATIONARY_THRESHOLD / 60000
-          )} minutes. Are you alright?`,
+          message: `We've noticed you haven't moved for ${durationText}. Are you alright?`,
           timeout: STATIONARY_CONFIRM_TIMEOUT,
         });
       } catch {
@@ -251,6 +255,8 @@ setInterval(async () => {
         const sosPipe = redis.pipeline();
         applySosState(sosPipe, roomCode, userId, true);
         await sosPipe.exec();
+
+        console.log(`🚨 stationary timeout -> auto SOS for room=${roomCode}, user=${username}, userId=${userId}`);
 
         io.to(roomCode).emit("user-sos", {
           socketId: socketId,
@@ -651,6 +657,8 @@ if (isCreator && roomCreators[roomCode]) {
   socket.on("stationary-response", async ({ roomCode, response }) => {
     const { userId, username } = socket.data;
     if (!roomCode || !userId) return;
+
+    console.log(`[stationary] response from user=${username}, room=${roomCode}, response=${response}`);
 
     // clear timeout
     if (pendingConfirmations[roomCode]?.[userId]) {

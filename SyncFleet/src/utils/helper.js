@@ -1,7 +1,9 @@
 // utils/helpers.js
 
+// For fast local testing: stationary event triggers quickly (instead of 5 minutes).
+// Set VITE_STATIONARY_LIMIT_MS and VITE_STATIONARY_CONFIRM_TIMEOUT_MS in .env for production values.
 export const STATIONARY_LIMIT =
-  Number(import.meta.env.VITE_STATIONARY_LIMIT_MS) || 2 * 60 * 1000; // 5 minutes
+  Number(import.meta.env.VITE_STATIONARY_LIMIT_MS) || 30 * 1000; // 30 seconds for fast testing
 export const MOVEMENT_THRESHOLD =
   Number(import.meta.env.VITE_MOVEMENT_THRESHOLD_M) || 5; // meters
 export const INACTIVE_THRESHOLD = 30000; // 30 seconds
@@ -10,9 +12,9 @@ export const GEOLOCATION_TIMEOUT = 10000;
 export const DEFAULT_TRAIL_DURATION = 5; // minutes
 export const DEVIATION_THRESHOLD = 150; // meters
 export const STATIONARY_CONFIRM_TIMEOUT =
-  Number(import.meta.env.VITE_STATIONARY_CONFIRM_TIMEOUT_MS) || 60000; // 1 minute
+  Number(import.meta.env.VITE_STATIONARY_CONFIRM_TIMEOUT_MS) || 10 * 1000; // 10 seconds for fast testing
 export const SOS_DURATION =
-  Number(import.meta.env.VITE_SOS_DURATION_MS) || 120000; // 2 minutes
+  Number(import.meta.env.VITE_SOS_DURATION_MS) || 20 * 1000; // 20 seconds
 import haversine from "haversine-distance";
 export const COLORS = [
   "#3b82f6",
