@@ -12,7 +12,7 @@ export const GEOLOCATION_TIMEOUT = 10000;
 export const DEFAULT_TRAIL_DURATION = 5; // minutes
 export const DEVIATION_THRESHOLD = 150; // meters
 export const STATIONARY_CONFIRM_TIMEOUT =
-  Number(import.meta.env.VITE_STATIONARY_CONFIRM_TIMEOUT_MS) || 10 * 1000; // 10 seconds for fast testing
+  Number(import.meta.env.VITE_STATIONARY_CONFIRM_TIMEOUT_MS) || 60 * 1000; // 1 minute for auto-SOS timeout
 export const SOS_DURATION =
   Number(import.meta.env.VITE_SOS_DURATION_MS) || 20 * 1000; // 20 seconds
 import haversine from "haversine-distance";

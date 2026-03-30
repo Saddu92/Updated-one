@@ -120,7 +120,7 @@ const STATIONARY_THRESHOLD = process.env.STATIONARY_THRESHOLD_MS
   : 30 * 1000; // 30 seconds in test mode
 const STATIONARY_CONFIRM_TIMEOUT = process.env.STATIONARY_CONFIRM_TIMEOUT_MS
   ? parseInt(process.env.STATIONARY_CONFIRM_TIMEOUT_MS, 10)
-  : 10 * 1000; // 10 seconds in test mode
+  : 60 * 1000; // 1 minute for auto-SOS timeout
 const LOCATION_EMIT_MS = process.env.LOCATION_EMIT_MS
   ? parseInt(process.env.LOCATION_EMIT_MS, 10)
   : 5000;
